@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
 
     // Get payment method config
-    const { data: paymentMethod } = await supabase
+    const { data: paymentMethodConfig } = await supabase
       .from('payment_methods')
       .select('*')
       .eq('method_type', 'payment_gateway')
@@ -35,14 +35,14 @@ export async function POST(request: NextRequest) {
       .eq('is_active', true)
       .maybeSingle()
 
-    if (!paymentMethod || !paymentMethod.gateway_config) {
+    if (!paymentMethodConfig || !paymentMethodConfig.gateway_config) {
       return NextResponse.json(
         { error: 'Payment gateway not configured' },
         { status: 400 }
       )
     }
 
-    const gatewayConfig = paymentMethod.gateway_config
+    const gatewayConfig = paymentMethodConfig.gateway_config
 
     // Get bill info
     const { data: bill } = await supabase
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       }
 
       const omise = new OmiseGateway(omiseConfig)
-      
+
       // Create customer if email provided
       let customerId: string | undefined
       if (customerEmail) {
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       }
 
       const twoc2p = new TwoC2PGateway(twoc2pConfig)
-      
+
       const payment = await twoc2p.createPayment({
         amount,
         currency: 'THB',
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
       .from('payment_transactions')
       .insert({
         bill_id: billId,
-        payment_method_id: paymentMethod.id,
+        payment_method_id: paymentMethodConfig.id,
         amount,
         currency: 'THB',
         status: 'pending',
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Payment Gateway] Error:', error)
     return NextResponse.json(
-      { 
+      {
         error: error.message || 'Failed to create payment charge',
         details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
