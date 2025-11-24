@@ -211,6 +211,12 @@ export default function PortalDashboardPage() {
   const loadPortalData = useCallback(async (info: ResidentInfo | string) => {
     setIsLoading(true);
 
+    // Add timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.warn('[Portal Dashboard] Loading timeout - forcing completion');
+      setIsLoading(false);
+    }, 10000); // 10 second timeout
+
     // Handle case where info might be a string (unit_number) instead of ResidentInfo object
     let residentInfoObj: ResidentInfo;
     if (typeof info === 'string') {
@@ -223,6 +229,7 @@ export default function PortalDashboardPage() {
           description: "ข้อมูลผู้ใช้ไม่ถูกต้อง กรุณาลองเข้าสู่ระบบอีกครั้ง",
           variant: "destructive"
         });
+        clearTimeout(timeoutId);
         setIsLoading(false);
         return;
       }
@@ -239,6 +246,7 @@ export default function PortalDashboardPage() {
         description: "ข้อมูลผู้ใช้ไม่ถูกต้อง กรุณาลองเข้าสู่ระบบอีกครั้ง",
         variant: "destructive"
       });
+      clearTimeout(timeoutId);
       setIsLoading(false);
       return;
     }
@@ -279,9 +287,10 @@ export default function PortalDashboardPage() {
         maintenanceRequests: [],
       });
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, residentInfo]);
 
   useEffect(() => {
     if (residentInfo && residentInfo.id) {
