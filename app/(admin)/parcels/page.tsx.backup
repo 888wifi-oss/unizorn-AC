@@ -1,0 +1,752 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { PageHeader } from "@/components/page-header"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  Package, 
+  Plus, 
+  Search, 
+  Filter,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Camera,
+  QrCode,
+  User,
+  Phone,
+  CreditCard,
+  Loader2,
+  Eye,
+  Printer
+} from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { 
+  createParcel, 
+  getAllParcels, 
+  pickupParcel, 
+  getParcelStats,
+  searchParcels,
+  createParcelAuthorization
+} from "@/lib/supabase/parcel-actions"
+import { Parcel, ParcelFormData, ParcelPickupData, ParcelStats } from "@/lib/types/parcel"
+import { getUnitsFromDB } from "@/lib/supabase/actions"
+import { testUnitsTableForParcels } from "@/lib/supabase/test-units"
+import { testParcelsTable } from "@/lib/supabase/test-parcels"
+import { useProjectContext } from "@/lib/contexts/project-context"
+import { getCurrentUser } from "@/lib/utils/mock-auth"
+
+export default function ParcelManagementPage() {
+  const [parcels, setParcels] = useState<Parcel[]>([])
+  const [allParcels, setAllParcels] = useState<Parcel[]>([])
+  const [units, setUnits] = useState<any[]>([])
+  const [allUnits, setAllUnits] = useState<any[]>([])
+  const [stats, setStats] = useState<ParcelStats | null>(null)
+  const { selectedProjectId, selectedProject } = useProjectContext()
+  const currentUser = getCurrentUser()
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isPickupDialogOpen, setIsPickupDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null)
+  
+  // Form states
+  const [formData, setFormData] = useState<ParcelFormData>({
+    unit_number: "",
+    recipient_name: "",
+    courier_company: "",
+    tracking_number: "",
+    parcel_description: "",
+    staff_received_by: "",
+    notes: ""
+  })
+  
+  const [pickupData, setPickupData] = useState<ParcelPickupData>({
+    parcel_id: "",
+    picked_up_by: "",
+    picked_up_method: "qr_code",
+    staff_delivered_by: "",
+    digital_signature: "",
+    delivery_photo_url: "",
+    notes: ""
+  })
+
+  const { toast } = useToast()
+
+  useEffect(() => {
+    console.log('[Parcels] useEffect triggered. selectedProjectId:', selectedProjectId)
+    loadData()
+  }, [selectedProjectId])
+
+  const loadData = async () => {
+    setIsLoading(true)
+    try {
+      console.log('[Parcels] Loading data...')
+      
+      const [parcelsResult, unitsResult, statsResult] = await Promise.all([
+        getAllParcels(),
+        getUnitsFromDB(),
+        getParcelStats()
+      ])
+
+      console.log('[Parcels] Parcels result:', parcelsResult)
+      console.log('[Parcels] Units result:', unitsResult)
+      console.log('[Parcels] Stats result:', statsResult)
+
+      // Filter units by project first
+      if (unitsResult.success) {
+        const allUnitsData = unitsResult.units || []
+        setAllUnits(allUnitsData)
+        console.log('[Parcels] Total units from DB:', allUnitsData.length)
+        
+        // Filter by selected project (for non-Super Admin)
+        if (selectedProjectId && currentUser.role !== 'super_admin') {
+          const filteredUnits = allUnitsData.filter(unit => unit.project_id === selectedProjectId)
+          console.log('[Parcels] Filtered units:', allUnitsData.length, '→', filteredUnits.length)
+          setUnits(filteredUnits)
+        } else {
+          console.log('[Parcels] No filtering units (Super Admin)')
+          setUnits(allUnitsData)
+        }
+      }
+
+      if (parcelsResult.success) {
+        const allParcelsData = parcelsResult.parcels || []
+        setAllParcels(allParcelsData)
+        console.log('[Parcels] Total parcels from DB:', allParcelsData.length)
+        
+        // Filter by selected project (for non-Super Admin)
+        let filteredParcels = allParcelsData
+        if (selectedProjectId && currentUser.role !== 'super_admin') {
+          filteredParcels = allParcelsData.filter(parcel => parcel.project_id === selectedProjectId)
+          console.log('[Parcels] Filtered parcels:', allParcelsData.length, '→', filteredParcels.length)
+        } else {
+          console.log('[Parcels] No filtering parcels (Super Admin)')
+        }
+        
+        setParcels(filteredParcels)
+        
+        // Calculate stats from filtered parcels
+        const calculatedStats = {
+          total_parcels: filteredParcels.length,
+          pending_parcels: filteredParcels.filter(p => p.status === 'pending').length,
+          picked_up_parcels: filteredParcels.filter(p => p.status === 'picked_up').length,
+          today_parcels: filteredParcels.filter(p => {
+            const today = new Date().toISOString().split('T')[0]
+            const parcelDate = p.received_date?.split('T')[0]
+            return parcelDate === today
+          }).length
+        }
+        
+        setStats(calculatedStats)
+        console.log('[Parcels] Calculated stats for project:', calculatedStats)
+      } else {
+        console.error('[Parcels] Failed to load parcels:', parcelsResult.error)
+      }
+    } catch (error: any) {
+      console.error('Load data error:', error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCreateParcel = async () => {
+    if (!formData.unit_number || !formData.recipient_name || !formData.courier_company || !formData.staff_received_by) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      console.log('[Parcels] Creating parcel with project_id:', selectedProjectId)
+      const result = await createParcel({
+        ...formData,
+        project_id: selectedProjectId  // ✅ เพิ่ม project_id
+      })
+      if (result.success) {
+        console.log('[Parcels] Parcel created successfully')
+        toast({
+          title: "สำเร็จ",
+          description: "ลงทะเบียนพัสดุเรียบร้อยแล้ว",
+        })
+        setIsCreateDialogOpen(false)
+        setFormData({
+          unit_number: "",
+          recipient_name: "",
+          courier_company: "",
+          tracking_number: "",
+          parcel_description: "",
+          staff_received_by: "",
+          notes: ""
+        })
+        // ✅ Reload data to show new parcel
+        await loadData()
+      } else {
+        toast({
+          title: "เกิดข้อผิดพลาด",
+          description: result.error,
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handlePickupParcel = async () => {
+    if (!pickupData.parcel_id) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่พบข้อมูลพัสดุ กรุณาลองใหม่",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!pickupData.picked_up_by || !pickupData.staff_delivered_by) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      console.log('Pickup data:', pickupData)
+      const result = await pickupParcel(pickupData)
+      if (result.success) {
+        toast({
+          title: "สำเร็จ",
+          description: "บันทึกการรับพัสดุเรียบร้อยแล้ว",
+        })
+        setIsPickupDialogOpen(false)
+        setPickupData({
+          parcel_id: "",
+          picked_up_by: "",
+          picked_up_method: "qr_code",
+          staff_delivered_by: "",
+          digital_signature: "",
+          delivery_photo_url: "",
+          notes: ""
+        })
+        loadData()
+      } else {
+        toast({
+          title: "เกิดข้อผิดพลาด",
+          description: result.error,
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
+      console.error('Pickup parcel error:', error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTestParcels = async () => {
+    setIsLoading(true)
+    try {
+      console.log('Testing parcels table...')
+      
+      const result = await testParcelsTable()
+      console.log('Parcels test result:', result)
+      
+      toast({
+        title: "ผลการทดสอบพัสดุ",
+        description: result.success 
+          ? result.message || 'ตารางพัสดุพร้อมใช้งาน'
+          : `เกิดข้อผิดพลาด: ${result.error}`,
+        variant: result.success ? "default" : "destructive",
+      })
+    } catch (error: any) {
+      console.error('Test parcels error:', error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      loadData()
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const result = await searchParcels(searchQuery)
+      if (result.success) {
+        setParcels(result.parcels || [])
+      }
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTestUnits = async () => {
+    setIsLoading(true)
+    try {
+      console.log('Testing units table...')
+      
+      const result = await testUnitsTableForParcels()
+      console.log('Units test result:', result)
+      
+      toast({
+        title: "ผลการทดสอบ",
+        description: result.success 
+          ? `พบห้อง ${result.units?.length || 0} ห้อง`
+          : `เกิดข้อผิดพลาด: ${result.error}`,
+        variant: result.success ? "default" : "destructive",
+      })
+      
+      if (result.success && result.units) {
+        setUnits(result.units)
+      }
+    } catch (error: any) {
+      console.error('Test error:', error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <Badge variant="outline" className="text-yellow-600"><Clock className="w-3 h-3 mr-1" />รอรับ</Badge>
+      case 'delivered':
+        return <Badge variant="outline" className="text-blue-600"><Package className="w-3 h-3 mr-1" />ส่งมอบแล้ว</Badge>
+      case 'picked_up':
+        return <Badge variant="outline" className="text-green-600"><CheckCircle className="w-3 h-3 mr-1" />รับแล้ว</Badge>
+      case 'expired':
+        return <Badge variant="outline" className="text-red-600"><XCircle className="w-3 h-3 mr-1" />หมดอายุ</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  const getPickupMethodIcon = (method: string) => {
+    switch (method) {
+      case 'qr_code':
+        return <QrCode className="w-4 h-4" />
+      case 'id_card':
+        return <CreditCard className="w-4 h-4" />
+      case 'phone':
+        return <Phone className="w-4 h-4" />
+      case 'unit_code':
+        return <User className="w-4 h-4" />
+      default:
+        return <User className="w-4 h-4" />
+    }
+  }
+
+  const filteredParcels = parcels.filter(parcel => {
+    if (statusFilter === "all") return true
+    return parcel.status === statusFilter
+  })
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="จัดการพัสดุ"
+        subtitle="ลงทะเบียนและจัดการพัสดุของลูกบ้าน"
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleTestUnits} disabled={isLoading}>
+              <Package className="mr-2 h-4 w-4" />
+              ทดสอบห้อง
+            </Button>
+            <Button variant="outline" onClick={handleTestParcels} disabled={isLoading}>
+              <Package className="mr-2 h-4 w-4" />
+              ทดสอบพัสดุ
+            </Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="mr-2 h-4 w-4" />
+              พิมพ์รายงาน
+            </Button>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              รับพัสดุเข้า
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">พัสดุทั้งหมด</CardTitle>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.total_parcels}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">รอรับ</CardTitle>
+              <Clock className="h-4 w-4 text-yellow-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.pending_parcels}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">รับแล้ว</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.picked_up_parcels}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">วันนี้</CardTitle>
+              <AlertCircle className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{stats.today_parcels}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Search and Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle>ค้นหาและกรอง</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="ค้นหาด้วยเลขห้อง, ชื่อผู้รับ, บริษัทขนส่ง..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                />
+              </div>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="กรองตามสถานะ" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทั้งหมด</SelectItem>
+                <SelectItem value="pending">รอรับ</SelectItem>
+                <SelectItem value="delivered">ส่งมอบแล้ว</SelectItem>
+                <SelectItem value="picked_up">รับแล้ว</SelectItem>
+                <SelectItem value="expired">หมดอายุ</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleSearch} disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Parcels Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>รายการพัสดุ</CardTitle>
+          <CardDescription>
+            แสดงพัสดุทั้งหมด {filteredParcels.length} รายการ
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>เลขห้อง</TableHead>
+                  <TableHead>ผู้รับ</TableHead>
+                  <TableHead>บริษัทขนส่ง</TableHead>
+                  <TableHead>สถานะ</TableHead>
+                  <TableHead>วันที่รับ</TableHead>
+                  <TableHead>เจ้าหน้าที่รับ</TableHead>
+                  <TableHead>การดำเนินการ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredParcels.map((parcel) => (
+                  <TableRow key={parcel.id}>
+                    <TableCell className="font-medium">{parcel.unit_number}</TableCell>
+                    <TableCell>{parcel.recipient_name}</TableCell>
+                    <TableCell>{parcel.courier_company}</TableCell>
+                    <TableCell>{getStatusBadge(parcel.status)}</TableCell>
+                    <TableCell>
+                      {new Date(parcel.received_at).toLocaleDateString('th-TH')}
+                    </TableCell>
+                    <TableCell>{parcel.staff_received_by}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedParcel(parcel)
+                            setPickupData({
+                              ...pickupData,
+                              parcel_id: parcel.id
+                            })
+                            setIsPickupDialogOpen(true)
+                          }}
+                          disabled={parcel.status === 'picked_up'}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          มอบพัสดุ
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create Parcel Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>รับพัสดุเข้า</DialogTitle>
+            <DialogDescription>
+              กรอกข้อมูลพัสดุที่มาถึง
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="unit_number">เลขห้อง *</Label>
+                <Select value={formData.unit_number} onValueChange={(value) => {
+                  if (value !== "no-units") {
+                    setFormData({...formData, unit_number: value})
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={units.length === 0 ? "กำลังโหลด..." : "เลือกห้อง"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.length === 0 ? (
+                      <SelectItem value="no-units" disabled>
+                        {isLoading ? "กำลังโหลดข้อมูลห้อง..." : "ไม่มีข้อมูลห้อง"}
+                      </SelectItem>
+                    ) : (
+                      units.map((unit) => (
+                        <SelectItem key={unit.unit_number} value={unit.unit_number}>
+                          {unit.unit_number} - {unit.owner_name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {units.length === 0 && !isLoading && (
+                  <p className="text-sm text-red-600 mt-1">
+                    ไม่สามารถโหลดข้อมูลห้องได้ กรุณารีเฟรชหน้า
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="recipient_name">ชื่อผู้รับ *</Label>
+                <Input
+                  id="recipient_name"
+                  value={formData.recipient_name}
+                  onChange={(e) => setFormData({...formData, recipient_name: e.target.value})}
+                  placeholder="ชื่อผู้รับพัสดุ"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="courier_company">บริษัทขนส่ง *</Label>
+                <Input
+                  id="courier_company"
+                  value={formData.courier_company}
+                  onChange={(e) => setFormData({...formData, courier_company: e.target.value})}
+                  placeholder="เช่น Flash Express, Kerry, J&T"
+                />
+              </div>
+              <div>
+                <Label htmlFor="tracking_number">หมายเลขติดตาม</Label>
+                <Input
+                  id="tracking_number"
+                  value={formData.tracking_number}
+                  onChange={(e) => setFormData({...formData, tracking_number: e.target.value})}
+                  placeholder="หมายเลขติดตามพัสดุ"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="parcel_description">รายละเอียดพัสดุ</Label>
+              <Textarea
+                id="parcel_description"
+                value={formData.parcel_description}
+                onChange={(e) => setFormData({...formData, parcel_description: e.target.value})}
+                placeholder="รายละเอียดพัสดุ (ขนาด, น้ำหนัก, ฯลฯ)"
+              />
+            </div>
+            <div>
+              <Label htmlFor="staff_received_by">เจ้าหน้าที่รับ *</Label>
+              <Input
+                id="staff_received_by"
+                value={formData.staff_received_by}
+                onChange={(e) => setFormData({...formData, staff_received_by: e.target.value})}
+                placeholder="ชื่อเจ้าหน้าที่ที่รับพัสดุ"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">หมายเหตุ</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                placeholder="หมายเหตุเพิ่มเติม"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              ยกเลิก
+            </Button>
+            <Button variant="outline" onClick={loadData} disabled={isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "รีเฟรชข้อมูล"}
+            </Button>
+            <Button onClick={handleCreateParcel} disabled={isLoading || units.length === 0}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "บันทึก"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pickup Parcel Dialog */}
+      <Dialog open={isPickupDialogOpen} onOpenChange={setIsPickupDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>มอบพัสดุ</DialogTitle>
+            <DialogDescription>
+              บันทึกการมอบพัสดุให้ลูกบ้าน
+            </DialogDescription>
+          </DialogHeader>
+          {selectedParcel && (
+            <div className="space-y-4 py-4">
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium">ข้อมูลพัสดุ</h4>
+                <p>ห้อง: {selectedParcel.unit_number}</p>
+                <p>ผู้รับ: {selectedParcel.recipient_name}</p>
+                <p>บริษัท: {selectedParcel.courier_company}</p>
+              </div>
+              
+              <div className="grid gap-4">
+                <div>
+                  <Label htmlFor="picked_up_by">ชื่อผู้รับพัสดุ *</Label>
+                  <Input
+                    id="picked_up_by"
+                    value={pickupData.picked_up_by}
+                    onChange={(e) => setPickupData({...pickupData, picked_up_by: e.target.value})}
+                    placeholder="ชื่อผู้ที่มารับพัสดุ"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="picked_up_method">วิธีการยืนยันตัวตน</Label>
+                  <Select value={pickupData.picked_up_method} onValueChange={(value: any) => setPickupData({...pickupData, picked_up_method: value})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="qr_code">QR Code</SelectItem>
+                      <SelectItem value="id_card">บัตรประชาชน</SelectItem>
+                      <SelectItem value="phone">เบอร์โทรศัพท์</SelectItem>
+                      <SelectItem value="unit_code">รหัสห้อง</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="staff_delivered_by">เจ้าหน้าที่มอบ *</Label>
+                  <Input
+                    id="staff_delivered_by"
+                    value={pickupData.staff_delivered_by}
+                    onChange={(e) => setPickupData({...pickupData, staff_delivered_by: e.target.value})}
+                    placeholder="ชื่อเจ้าหน้าที่ที่มอบพัสดุ"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="notes">หมายเหตุ</Label>
+                  <Textarea
+                    id="notes"
+                    value={pickupData.notes}
+                    onChange={(e) => setPickupData({...pickupData, notes: e.target.value})}
+                    placeholder="หมายเหตุเพิ่มเติม"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPickupDialogOpen(false)}>
+              ยกเลิก
+            </Button>
+            <Button onClick={handlePickupParcel} disabled={isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "บันทึกการรับ"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

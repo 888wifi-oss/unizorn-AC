@@ -1,0 +1,47 @@
+# Migration Log: Convert Project-Scoped Groups to Global Groups
+
+## Step 1: Backup existing data
+- Created backup tables: user_group_members_backup, user_group_permissions_backup
+- Backup completed successfully
+
+## Step 2: Add project_id to user_group_permissions
+- Added project_id column to user_group_permissions table
+- Added foreign key constraint to projects table
+
+## Step 3: Migrate data
+- Copied permissions from old structure to new structure
+- Each group's permissions are now copied for each project
+
+## Step 4: Remove old columns
+- Removed project_id from user_groups table
+- Removed project_id from user_group_members table
+
+## Step 5: Update constraints and policies
+- Updated unique constraints
+- Updated RLS policies
+- Created new indexes
+
+## Step 6: Test migration
+- Verified data integrity
+- Tested new structure
+
+## Migration Status: COMPLETED ✅
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
