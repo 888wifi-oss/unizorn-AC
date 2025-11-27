@@ -88,7 +88,8 @@ export function ProtectedSidebar() {
           'fixed_assets', 'depreciation', 'chart_of_accounts', 'journal_vouchers', 'general_ledger',
           'revenue_budget', 'expense_budget', 'budget_report', 'revenue_reports', 'financial_statements',
           'reports', 'analytics', 'automation', 'theme_settings', 'user_management',
-          'revenue_journal', 'expense_approval', 'expense_reports', 'trial_balance', 'vendors'
+          'revenue_journal', 'expense_approval', 'expense_reports', 'trial_balance', 'vendors',
+          'system'
         ]
 
         const visibleMenus: Record<string, boolean> = {}
@@ -189,6 +190,7 @@ export function ProtectedSidebar() {
         { icon: 'Shield', label: "จัดการผู้ใช้และสิทธิ์", href: "/user-management", module: "users", minActions: ['view'] },
         { icon: 'Users', label: "กลุ่มผู้ใช้งาน", href: "/user-groups", module: "user_groups", minActions: ['view'] },
         { icon: 'Key', label: "จัดการ API", href: "/api-management", module: "api", minActions: ['view'] },
+        { icon: 'Database', label: "ย้ายข้อมูล (Migration)", href: "/settings/migration", module: "system", minActions: ['view'] },
       ]
     },
     {

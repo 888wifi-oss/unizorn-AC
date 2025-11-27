@@ -17,6 +17,12 @@ interface Bill {
     due_date: string
     status: string
     latest_transaction_status?: string
+    common_fee?: number
+    water_fee?: number
+    electricity_fee?: number
+    parking_fee?: number
+    other_fee?: number
+    unitNumber?: string
 }
 
 interface OutstandingBillsProps {
@@ -59,75 +65,88 @@ export function OutstandingBills({ bills, settings, language, onPay, onPrint }: 
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-sm md:text-base">{t.outstandingBills}</CardTitle>
+        <Card className="border-none shadow-xl bg-white/80 dark:bg-gray-900/60 backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800 pb-4">
+                <CardTitle className="text-lg md:text-xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
+                    {t.outstandingBills}
+                </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
                 {/* Desktop Table */}
-                <div className="hidden md:block">
+                <div className="hidden md:block overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800">
                     <Table>
-                        <TableHeader>
+                        <TableHeader className="bg-gray-50/50 dark:bg-gray-900/50">
                             <TableRow>
-                                <TableHead>{t.month}</TableHead>
-                                <TableHead>{t.dueDate}</TableHead>
-                                <TableHead className="text-right">{t.amount}</TableHead>
-                                <TableHead>{t.status}</TableHead>
-                                <TableHead className="text-right">{t.actions}</TableHead>
+                                <TableHead className="font-semibold">{t.month}</TableHead>
+                                <TableHead className="font-semibold">{t.dueDate}</TableHead>
+                                <TableHead className="text-right font-semibold">{t.amount}</TableHead>
+                                <TableHead className="font-semibold">{t.status}</TableHead>
+                                <TableHead className="text-right font-semibold">{t.actions}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {bills.length > 0 ? (
-                                bills.map((bill) => (
-                                    <TableRow key={bill.id}>
-                                        <TableCell>{formatDate(bill.month, settings.dateFormat, settings.yearType, { month: "long", year: "numeric" })}</TableCell>
+                                bills.map((bill, index) => (
+                                    <TableRow
+                                        key={bill.id}
+                                        className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors duration-200"
+                                        style={{ animationDelay: `${index * 100}ms` }}
+                                    >
+                                        <TableCell className="font-medium">{formatDate(bill.month, settings.dateFormat, settings.yearType, { month: "long", year: "numeric" })}</TableCell>
                                         <TableCell>{formatDate(bill.due_date, settings.dateFormat, settings.yearType)}</TableCell>
-                                        <TableCell className="text-right font-semibold">{formatCurrency(bill.total)}</TableCell>
+                                        <TableCell className="text-right font-bold text-primary">{formatCurrency(bill.total)}</TableCell>
                                         <TableCell>{getStatusBadge(bill)}</TableCell>
                                         <TableCell className="text-right space-x-2">
                                             {bill.latest_transaction_status === 'pending' || bill.latest_transaction_status === 'processing' ? (
-                                                <Button size="sm" variant="outline" disabled>
+                                                <Button size="sm" variant="outline" disabled className="opacity-80">
                                                     {bill.latest_transaction_status === 'processing' ? t.processing : t.pendingReview}
                                                 </Button>
                                             ) : (
-                                                <Button size="sm" onClick={() => onPay(bill)}>{t.payNow}</Button>
+                                                <Button size="sm" onClick={() => onPay(bill)} className="shadow-sm hover:shadow-md transition-all">{t.payNow}</Button>
                                             )}
-                                            <Button variant="ghost" size="sm" onClick={() => onPrint(bill)}><Download className="mr-1 h-4 w-4" />{t.invoice}</Button>
+                                            <Button variant="ghost" size="sm" onClick={() => onPrint(bill)} className="hover:bg-gray-100 dark:hover:bg-gray-800"><Download className="mr-1 h-4 w-4" />{t.invoice}</Button>
                                         </TableCell>
                                     </TableRow>
                                 ))
-                            ) : <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">{t.noOutstanding}</TableCell></TableRow>}
+                            ) : <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-12">{t.noOutstanding}</TableCell></TableRow>}
                         </TableBody>
                     </Table>
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="md:hidden space-y-3">
+                <div className="md:hidden space-y-4">
                     {bills.length > 0 ? (
-                        bills.map((bill) => (
-                            <Card key={bill.id} className="p-4">
+                        bills.map((bill, index) => (
+                            <Card
+                                key={bill.id}
+                                className="p-4 border-l-4 border-l-primary shadow-sm hover:shadow-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards"
+                                style={{ animationDelay: `${index * 100}ms` }}
+                            >
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <p className="font-semibold text-sm">{formatDate(bill.month, settings.dateFormat, settings.yearType, { month: "long", year: "numeric" })}</p>
-                                            <p className="text-xs text-muted-foreground">{t.dueDate}: {formatDate(bill.due_date, settings.dateFormat, settings.yearType)}</p>
+                                            <p className="font-bold text-base text-gray-900 dark:text-gray-100">{formatDate(bill.month, settings.dateFormat, settings.yearType, { month: "long", year: "numeric" })}</p>
+                                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {t.dueDate}: {formatDate(bill.due_date, settings.dateFormat, settings.yearType)}
+                                            </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="font-bold text-lg">{formatCurrency(bill.total)}</p>
-                                            {getStatusBadge(bill)}
+                                            <p className="font-bold text-xl text-primary">{formatCurrency(bill.total)}</p>
+                                            <div className="mt-1">{getStatusBadge(bill)}</div>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="pt-2 flex gap-3">
                                         {bill.latest_transaction_status === 'pending' || bill.latest_transaction_status === 'processing' ? (
-                                            <Button size="sm" className="flex-1" variant="outline" disabled>
+                                            <Button size="sm" className="flex-1 bg-gray-100 text-gray-500 dark:bg-gray-800" variant="outline" disabled>
                                                 {bill.latest_transaction_status === 'processing' ? t.processing : t.pendingReview}
                                             </Button>
                                         ) : (
-                                            <Button size="sm" className="flex-1" onClick={() => onPay(bill)}>
+                                            <Button size="sm" className="flex-1 shadow-md active:scale-95 transition-transform" onClick={() => onPay(bill)}>
                                                 {t.payNow}
                                             </Button>
                                         )}
-                                        <Button variant="outline" size="sm" onClick={() => onPrint(bill)}>
+                                        <Button variant="outline" size="sm" onClick={() => onPrint(bill)} className="px-3">
                                             <Download className="h-4 w-4" />
                                         </Button>
                                     </div>
@@ -135,7 +154,10 @@ export function OutstandingBills({ bills, settings, language, onPay, onPrint }: 
                             </Card>
                         ))
                     ) : (
-                        <div className="text-center text-muted-foreground py-8">{t.noOutstanding}</div>
+                        <div className="text-center text-muted-foreground py-12 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-dashed border-gray-200 dark:border-gray-800">
+                            <CheckCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                            <p>{t.noOutstanding}</p>
+                        </div>
                     )}
                 </div>
             </CardContent>

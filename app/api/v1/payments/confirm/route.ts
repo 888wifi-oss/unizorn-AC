@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { 
+import {
   createPaymentConfirmedNotification,
-  createPaymentRejectedNotification 
+  createPaymentRejectedNotification
 } from "@/lib/supabase/notification-helpers"
 
 export async function POST(request: NextRequest) {
@@ -66,6 +66,45 @@ export async function POST(request: NextRequest) {
         .update({ status: 'paid' })
         .eq('id', transaction.bill_id)
 
+      // Create journal entries in general ledger (Double Entry Bookkeeping)
+      const projectId = transaction.bills?.units?.project_id
+      const paidDate = new Date().toISOString().split('T')[0]
+      const description = `รับชำระค่าส่วนกลาง - ${transaction.bills?.units?.unit_number} (${transaction.bills?.bill_number})`
+
+      // Debit: Cash/Bank (1101)
+      // Credit: Revenue from Common Fees (4101)
+      const journalEntries = [
+        {
+          transaction_date: paidDate,
+          account_code: '1101', // Cash/Bank account
+          debit: transaction.amount,
+          credit: 0,
+          description,
+          reference_type: 'payment',
+          reference_id: transactionId,
+          project_id: projectId,
+        },
+        {
+          transaction_date: paidDate,
+          account_code: '4101', // Revenue from common fees
+          debit: 0,
+          credit: transaction.amount,
+          description,
+          reference_type: 'payment',
+          reference_id: transactionId,
+          project_id: projectId,
+        },
+      ]
+
+      const { error: glError } = await supabase
+        .from('general_ledger')
+        .insert(journalEntries)
+
+      if (glError) {
+        console.error('[Confirm Payment] Error creating journal entries:', glError)
+        // Don't fail the entire operation if GL insert fails
+      }
+
       // Create payment confirmation record
       await supabase
         .from('payment_confirmations')
@@ -127,7 +166,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Confirm Payment] Error:', error)
     return NextResponse.json(
-      { 
+      {
         error: error.message || 'Failed to confirm payment',
         details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },

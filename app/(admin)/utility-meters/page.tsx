@@ -19,7 +19,10 @@ import { useSettings } from "@/lib/settings-context"
 import { BatchAddMetersDialog } from "./batch-add-dialog"
 import { BatchApplyReadingsDialog } from "./batch-apply-readings-dialog"
 import { ApplyReadingToBillDialog } from "./apply-reading-to-bill-dialog"
+import { ExcelImportDialog } from "./excel-import-dialog"
 import { calculateUtilityCost } from "@/lib/utils/meter-calculations"
+import * as XLSX from "xlsx"
+import { Download, Upload } from "lucide-react"
 
 interface UtilityMeter {
   id: string
@@ -51,7 +54,7 @@ export default function UtilityMetersPage() {
   const { toast } = useToast()
   const { settings } = useSettings()
   const supabase = createClient()
-  
+
   const [meters, setMeters] = useState<UtilityMeter[]>([])
   const [allMeters, setAllMeters] = useState<UtilityMeter[]>([])
   const [units, setUnits] = useState<any[]>([])
@@ -61,11 +64,12 @@ export default function UtilityMetersPage() {
   const [isBatchApplyDialogOpen, setIsBatchApplyDialogOpen] = useState(false)
   const [isReadingDialogOpen, setIsReadingDialogOpen] = useState(false)
   const [isApplyToBillDialogOpen, setIsApplyToBillDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [selectedMeter, setSelectedMeter] = useState<UtilityMeter | null>(null)
   const [selectedMeterReadingId, setSelectedMeterReadingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [editingMeter, setEditingMeter] = useState<UtilityMeter | null>(null)
-  
+
   const [formData, setFormData] = useState({
     unitId: "",
     meterType: "water" as "water" | "electricity" | "gas",
@@ -73,7 +77,7 @@ export default function UtilityMetersPage() {
     meterLocation: "",
     isActive: true,
   })
-  
+
   const [readingFormData, setReadingFormData] = useState({
     readingDate: new Date().toISOString().split("T")[0],
     currentReading: "",
@@ -124,7 +128,7 @@ export default function UtilityMetersPage() {
       const processedMeters = (metersData || []).map((meter: any) => {
         const readings = meter.meter_readings || []
         const latestReading = readings
-          .sort((a: any, b: any) => 
+          .sort((a: any, b: any) =>
             new Date(b.reading_date).getTime() - new Date(a.reading_date).getTime()
           )[0]
 
@@ -138,11 +142,11 @@ export default function UtilityMetersPage() {
       console.log(`[perf] UtilityMeters loadData: processed ${processedMeters.length} meters in ${perfProcessMs}ms`)
 
       setAllMeters(processedMeters)
-      
+
       // Client-side fallback filter (should be already filtered server-side)
       if (selectedProjectId && currentUser.role !== 'super_admin') {
         const perfFilterStart = performance.now()
-        const filtered = processedMeters.filter((m: any) => 
+        const filtered = processedMeters.filter((m: any) =>
           m.units?.project_id === selectedProjectId
         )
         const perfFilterMs = Math.round(perfFilterStart ? performance.now() - perfFilterStart : 0)
@@ -157,11 +161,11 @@ export default function UtilityMetersPage() {
         .from('units')
         .select('id, unit_number')
         .order('unit_number')
-      
+
       if (selectedProjectId && currentUser.role !== 'super_admin') {
         unitsQuery = unitsQuery.eq('project_id', selectedProjectId)
       }
-      
+
       const perfUnitsStart = performance.now()
       const { data: unitsData } = await unitsQuery
       const perfUnitsMs = Math.round(perfUnitsStart ? performance.now() - perfUnitsStart : 0)
@@ -372,6 +376,50 @@ export default function UtilityMetersPage() {
     }
   }
 
+  const handleExportTemplate = () => {
+    try {
+      const exportData = filteredMeters.map(meter => ({
+        'Unit Number': meter.unit_number,
+        'Meter Type': meter.meter_type,
+        'Meter Number': meter.meter_number,
+        'Previous Reading': meter.latest_reading?.current_reading || 0,
+        'Previous Date': meter.latest_reading?.reading_date || '-',
+        'Current Reading': '', // Empty for user to fill
+        'Reading Date': new Date().toISOString().split('T')[0], // Default to today
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(exportData)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "Meter Readings")
+
+      // Auto-width columns
+      const wscols = [
+        { wch: 15 }, // Unit
+        { wch: 10 }, // Type
+        { wch: 15 }, // Meter No
+        { wch: 15 }, // Prev Reading
+        { wch: 15 }, // Prev Date
+        { wch: 15 }, // Current Reading
+        { wch: 15 }, // Reading Date
+      ]
+      ws['!cols'] = wscols
+
+      XLSX.writeFile(wb, `meter_readings_template_${new Date().toISOString().split('T')[0]}.xlsx`)
+
+      toast({
+        title: "Export Successful",
+        description: "Template downloaded successfully.",
+      })
+    } catch (error) {
+      console.error('Export error:', error)
+      toast({
+        title: "Export Failed",
+        description: "Could not generate Excel file.",
+        variant: "destructive"
+      })
+    }
+  }
+
   const filteredMeters = meters.filter((meter) =>
     meter.unit_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     meter.meter_number.toLowerCase().includes(searchTerm.toLowerCase())
@@ -408,17 +456,33 @@ export default function UtilityMetersPage() {
         subtitle="จัดการและจดเลขมิเตอร์น้ำ/ไฟฟ้า"
         action={
           <div className="flex gap-2">
-            <Button 
-              onClick={() => setIsBatchApplyDialogOpen(true)} 
-              className="bg-purple-600 hover:bg-purple-700" 
+            <Button
+              onClick={handleExportTemplate}
+              variant="outline"
+              size="sm"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export Template
+            </Button>
+            <Button
+              onClick={() => setIsImportDialogOpen(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Import Readings
+            </Button>
+            <Button
+              onClick={() => setIsBatchApplyDialogOpen(true)}
+              className="bg-purple-600 hover:bg-purple-700"
               size="sm"
             >
               <FileText className="w-4 h-4 mr-2" />
               นำไปใส่บิลแบบ Batch
             </Button>
-            <Button 
-              onClick={() => setIsBatchDialogOpen(true)} 
-              className="bg-green-600 hover:bg-green-700" 
+            <Button
+              onClick={() => setIsBatchDialogOpen(true)}
+              className="bg-green-600 hover:bg-green-700"
               size="sm"
             >
               <Users className="w-4 h-4 mr-2" />
@@ -492,21 +556,20 @@ export default function UtilityMetersPage() {
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    {meter.latest_reading?.current_reading 
+                    {meter.latest_reading?.current_reading
                       ? meter.latest_reading.current_reading.toLocaleString()
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    {meter.latest_reading?.usage_amount 
+                    {meter.latest_reading?.usage_amount
                       ? `${meter.latest_reading.usage_amount.toLocaleString()} ${meter.meter_type === 'water' ? 'ลบ.ม.' : 'kWh'}`
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      meter.is_active 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-gray-100 text-gray-700'
-                    }`}>
+                    <span className={`px-2 py-1 rounded text-xs ${meter.is_active
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-700'
+                      }`}>
                       {meter.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
                     </span>
                   </TableCell>
@@ -760,7 +823,14 @@ export default function UtilityMetersPage() {
           onSuccess={loadData}
         />
       )}
+
+      {/* Excel Import Dialog */}
+      <ExcelImportDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        onSuccess={loadData}
+        meters={allMeters}
+      />
     </div>
   )
 }
-

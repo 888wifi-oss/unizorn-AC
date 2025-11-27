@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useCallback, useMemo, memo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { getPortalDataForUnit, getReceiptData, createMaintenanceRequest } from "@/lib/supabase/actions"
+import {
+  getPortalDataForUnit,
+  getReceiptData,
+  createMaintenanceRequest,
+  getOutstandingBills,
+  getPaymentHistory,
+  getPortalAnnouncements,
+  getPortalMaintenanceRequests
+} from "@/lib/supabase/actions"
+import { getParcelsForUnit } from "@/lib/supabase/parcel-actions"
 import { createClient } from "@/lib/supabase/client"
 import { useSettings } from "@/lib/settings-context"
 import { formatDate } from "@/lib/date-formatter"
@@ -31,7 +40,9 @@ import { OutstandingBills } from "@/components/portal/outstanding-bills"
 import { PaymentHistory } from "@/components/portal/payment-history"
 import { Announcements } from "@/components/portal/announcements"
 import { MaintenanceList } from "@/components/portal/maintenance-list"
+import { DashboardOverview } from "@/components/portal/dashboard-overview"
 import { uiTranslations } from "@/lib/portal-translations"
+import useSWR, { mutate } from 'swr'
 
 const ParcelView = dynamic(() => import('@/components/parcel-view'), {
   loading: () => <div className="flex items-center justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
@@ -47,18 +58,8 @@ interface Payment { id: string; bill_id: string; amount: number; payment_date: s
 interface Announcement { id: string; title: string; content: string; publish_date: string; is_pinned: boolean; category?: string; image_urls?: string[]; attachments?: string[]; }
 interface MaintenanceRequest { id: string; title: string; status: string; created_at: string; scheduled_at?: string | null; }
 
-interface PortalData {
-  outstandingBills: Bill[];
-  paymentHistory: Payment[];
-  totalOutstanding: number;
-  announcements: Announcement[];
-  maintenanceRequests: MaintenanceRequest[];
-}
-
 export default function PortalDashboardPage() {
   const [residentInfo, setResidentInfo] = useState<ResidentInfo | null>(null);
-  const [financialData, setFinancialData] = useState<PortalData | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isPaymentMethodsDialogOpen, setIsPaymentMethodsDialogOpen] = useState(false)
   const [isSlipUploadDialogOpen, setIsSlipUploadDialogOpen] = useState(false)
@@ -109,7 +110,7 @@ export default function PortalDashboardPage() {
 
     if (tabParam) {
       const tabMapping: Record<string, string> = {
-        'bills': 'outstanding',
+        'bills': 'billing',
         'parcels': 'parcels',
         'announcements': 'announcements',
         'maintenance': 'maintenance'
@@ -207,99 +208,35 @@ export default function PortalDashboardPage() {
     loadResidentInfo();
   }, [router, toast]);
 
-  // Step 2: Fetch data only after residentInfo is confirmed
-  const loadPortalData = useCallback(async (info: ResidentInfo | string) => {
-    setIsLoading(true);
+  // SWR Hooks for Granular Data Fetching
+  const { data: outstandingBills, mutate: mutateBills, isLoading: isLoadingBills } = useSWR(
+    residentInfo?.id ? ['outstanding-bills', residentInfo.id] : null,
+    ([_, id]) => getOutstandingBills(id)
+  )
 
-    // Add timeout to prevent infinite loading
-    const timeoutId = setTimeout(() => {
-      console.warn('[Portal Dashboard] Loading timeout - forcing completion');
-      setIsLoading(false);
-    }, 10000); // 10 second timeout
+  const { data: paymentHistory, mutate: mutateHistory, isLoading: isLoadingHistory } = useSWR(
+    residentInfo?.id ? ['payment-history', residentInfo.id] : null,
+    ([_, id]) => getPaymentHistory(id)
+  )
 
-    // Handle case where info might be a string (unit_number) instead of ResidentInfo object
-    let residentInfoObj: ResidentInfo;
-    if (typeof info === 'string') {
-      console.warn('[Portal Dashboard] loadPortalData called with string, attempting to find residentInfo from state');
-      // Try to use current residentInfo from state
-      if (!residentInfo || !residentInfo.id) {
-        console.error('[Portal Dashboard] Invalid call: string provided but residentInfo state is not available');
-        toast({
-          title: "เกิดข้อผิดพลาด",
-          description: "ข้อมูลผู้ใช้ไม่ถูกต้อง กรุณาลองเข้าสู่ระบบอีกครั้ง",
-          variant: "destructive"
-        });
-        clearTimeout(timeoutId);
-        setIsLoading(false);
-        return;
-      }
-      residentInfoObj = residentInfo;
-    } else {
-      residentInfoObj = info;
-    }
+  const { data: announcements, isLoading: isLoadingAnnouncements } = useSWR(
+    residentInfo?.project_id ? ['announcements', residentInfo.project_id] : null,
+    ([_, id]) => getPortalAnnouncements(id)
+  )
 
-    // Validate residentInfo
-    if (!residentInfoObj || !residentInfoObj.id) {
-      console.error('[Portal Dashboard] Invalid residentInfo:', residentInfoObj, 'Type:', typeof residentInfoObj);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ข้อมูลผู้ใช้ไม่ถูกต้อง กรุณาลองเข้าสู่ระบบอีกครั้ง",
-        variant: "destructive"
-      });
-      clearTimeout(timeoutId);
-      setIsLoading(false);
-      return;
-    }
+  const { data: maintenanceRequests, mutate: mutateMaintenance, isLoading: isLoadingMaintenance } = useSWR(
+    residentInfo?.id ? ['maintenance-requests', residentInfo.id] : null,
+    ([_, id]) => getPortalMaintenanceRequests(id)
+  )
 
-    try {
-      console.log('[Portal Dashboard] Loading data for unit ID:', residentInfoObj.id, 'Unit number:', residentInfoObj.unit_number);
-      const portalData = await getPortalDataForUnit(residentInfoObj.id);
+  const { data: parcels, isLoading: isLoadingParcels } = useSWR(
+    residentInfo?.unit_number ? ['parcels', residentInfo.unit_number] : null,
+    ([_, unitNumber]) => getParcelsForUnit(unitNumber).then(res => res.success ? res.parcels : [])
+  )
 
-      // Check if there's an error in the response
-      if (portalData?.error) {
-        console.error('[Portal Dashboard] Error in portal data:', portalData.error);
-        toast({
-          title: "เกิดข้อผิดพลาด",
-          description: `ไม่สามารถโหลดข้อมูลพอร์ทัลได้: ${portalData.error}`,
-          variant: "destructive"
-        });
-      }
+  const totalOutstanding = (outstandingBills || []).reduce((sum: number, bill: any) => sum + (bill.total || 0), 0)
 
-      setFinancialData(portalData);
-    } catch (error: any) {
-      console.error("[Portal Dashboard] Failed to load portal data:", error);
-      console.error("[Portal Dashboard] Error details:", {
-        message: error.message,
-        stack: error.stack,
-        residentInfo: info
-      });
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถโหลดข้อมูลพอร์ทัลได้",
-        variant: "destructive"
-      });
-      // Set empty data to prevent crash
-      setFinancialData({
-        outstandingBills: [],
-        paymentHistory: [],
-        totalOutstanding: 0,
-        announcements: [],
-        maintenanceRequests: [],
-      });
-    } finally {
-      clearTimeout(timeoutId);
-      setIsLoading(false);
-    }
-  }, [toast, residentInfo]);
-
-  useEffect(() => {
-    if (residentInfo && residentInfo.id) {
-      console.log('[Portal Dashboard] Effect triggered, loading data for unit:', residentInfo.id);
-      loadPortalData(residentInfo);
-    } else {
-      console.warn('[Portal Dashboard] Effect triggered but residentInfo missing or no id:', residentInfo);
-    }
-  }, [residentInfo, loadPortalData]);
+  const isLoading = !residentInfo || (isLoadingBills && isLoadingHistory && isLoadingAnnouncements && isLoadingMaintenance && isLoadingParcels)
 
   const handleMaintenanceSubmit = async () => {
     const t = uiTranslations[displayLanguage];
@@ -307,7 +244,7 @@ export default function PortalDashboardPage() {
       toast({ title: "ข้อมูลไม่ครบถ้วน", description: "กรุณากรอกเรื่องที่ต้องการแจ้ง", variant: "destructive" });
       return;
     }
-    setIsLoading(true);
+    // setIsLoading(true); // SWR handles loading state
     try {
       await createMaintenanceRequest({
         ...maintenanceForm,
@@ -321,11 +258,11 @@ export default function PortalDashboardPage() {
       setIsMaintenanceModalOpen(false);
       setMaintenanceForm({ title: "", description: "", priority: "medium" });
       setUploadedImages([]);
-      if (residentInfo) await loadPortalData(residentInfo); // Refresh data
+      mutateMaintenance(); // Refresh data
     } catch (error: any) {
       toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      // setIsLoading(false);
     }
   }
 
@@ -381,7 +318,8 @@ export default function PortalDashboardPage() {
     // Reload financial data after payment
     if (residentInfo && residentInfo.id) {
       console.log('[Portal Dashboard] Reloading data after payment completion');
-      loadPortalData(residentInfo);
+      mutateBills();
+      mutateHistory();
     } else {
       console.warn('[Portal Dashboard] Cannot reload: residentInfo missing or no id');
     }
@@ -424,8 +362,6 @@ export default function PortalDashboardPage() {
       </div>
     )
   }
-  const announcements = financialData?.announcements || [];
-  const maintenanceRequests = financialData?.maintenanceRequests || [];
   const t = uiTranslations[displayLanguage];
 
   return (
@@ -461,6 +397,14 @@ export default function PortalDashboardPage() {
             </div>
           </div>
 
+          <DashboardOverview
+            bills={outstandingBills || []}
+            announcements={announcements || []}
+            parcels={parcels || []}
+            maintenanceRequests={maintenanceRequests || []}
+            isLoading={isLoading}
+          />
+
           {/* Compact Outstanding Card for Mobile */}
           <Card className="mb-4 md:mb-6 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800/50">
             <CardContent className="p-4 md:p-6">
@@ -472,12 +416,12 @@ export default function PortalDashboardPage() {
                     <span className="hidden md:inline">{t.totalOutstanding}</span>
                   </p>
                   <p className="text-2xl md:text-4xl font-bold text-red-600 dark:text-red-400 mt-1">
-                    {formatCurrency(financialData?.totalOutstanding)}
+                    {formatCurrency(totalOutstanding)}
                   </p>
                 </div>
                 {/* Quick Actions for Mobile */}
                 <div className="md:hidden flex gap-2">
-                  {financialData?.totalOutstanding && financialData.totalOutstanding > 0 && (() => {
+                  {totalOutstanding > 0 && (() => {
                     const { primary, primaryHover } = getThemeClasses(theme)
                     return (
                       <Button size="sm" className={`${primary} ${primaryHover} text-white`}>
@@ -496,7 +440,7 @@ export default function PortalDashboardPage() {
               <TabsTrigger value="outstanding" className="text-xs md:text-sm py-2">
                 <span className="hidden md:inline">{t.outstandingBills}</span>
                 <span className="md:hidden">บิลค้าง</span>
-                <span className="ml-1">({(financialData?.outstandingBills || []).length})</span>
+                <span className="ml-1">({(outstandingBills || []).length})</span>
               </TabsTrigger>
               <TabsTrigger value="history" className="text-xs md:text-sm py-2">
                 <span className="hidden md:inline">{t.paymentHistory}</span>
@@ -513,13 +457,13 @@ export default function PortalDashboardPage() {
               <TabsTrigger value="maintenance" className="text-xs md:text-sm py-2">
                 <span className="hidden md:inline">{t.maintenance}</span>
                 <span className="md:hidden">ซ่อม</span>
-                <span className="ml-1">({maintenanceRequests.length})</span>
+                <span className="ml-1">({(maintenanceRequests || []).length})</span>
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="outstanding">
               <OutstandingBills
-                bills={financialData?.outstandingBills || []}
+                bills={outstandingBills || []}
                 settings={settings}
                 language={displayLanguage}
                 onPay={openPaymentModal}
@@ -528,15 +472,47 @@ export default function PortalDashboardPage() {
             </TabsContent>
             <TabsContent value="history">
               <PaymentHistory
-                payments={financialData?.paymentHistory || []}
+                payments={paymentHistory || []}
                 settings={settings}
                 language={displayLanguage}
                 onPrint={handlePrintReceipt}
               />
             </TabsContent>
+
+            {/* Billing View for Mobile - Combines Outstanding and History */}
+            <TabsContent value="billing">
+              <Tabs defaultValue="outstanding-sub" className="w-full">
+                <div className="flex justify-center mb-4">
+                  <TabsList className="grid w-full max-w-md grid-cols-2">
+                    <TabsTrigger value="outstanding-sub">{t.outstandingBills}</TabsTrigger>
+                    <TabsTrigger value="history-sub">{t.paymentHistory}</TabsTrigger>
+                  </TabsList>
+                </div>
+
+                <TabsContent value="outstanding-sub" className="mt-0">
+                  <OutstandingBills
+                    bills={outstandingBills || []}
+                    settings={settings}
+                    language={displayLanguage}
+                    onPay={openPaymentModal}
+                    onPrint={handlePrintInvoice}
+                  />
+                </TabsContent>
+
+                <TabsContent value="history-sub" className="mt-0">
+                  <PaymentHistory
+                    payments={paymentHistory || []}
+                    settings={settings}
+                    language={displayLanguage}
+                    onPrint={handlePrintReceipt}
+                  />
+                </TabsContent>
+              </Tabs>
+            </TabsContent>
+
             <TabsContent value="announcements">
               <Announcements
-                announcements={announcements}
+                announcements={announcements || []}
                 settings={settings}
                 language={displayLanguage}
               />
@@ -548,11 +524,11 @@ export default function PortalDashboardPage() {
 
             <TabsContent value="maintenance">
               <MaintenanceList
-                requests={maintenanceRequests}
+                requests={maintenanceRequests || []}
                 settings={settings}
                 language={displayLanguage}
                 onCreateNew={() => setIsMaintenanceModalOpen(true)}
-                isLoading={isLoading}
+                isLoading={isLoadingMaintenance}
               />
             </TabsContent>
           </Tabs>

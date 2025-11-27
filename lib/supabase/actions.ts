@@ -3,6 +3,124 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 
+// Granular Actions for Portal Performance
+
+export async function getOutstandingBills(unitId: string) {
+    const supabase = await createClient();
+    if (!unitId) return [];
+
+    const { data, error } = await supabase
+        .from('bills')
+        .select('*')
+        .eq('unit_id', unitId)
+        .neq('status', 'paid')
+        .neq('status', 'cancelled')
+        .order('due_date', { ascending: true });
+
+    if (error) {
+        console.error('[getOutstandingBills] Error:', error);
+        return [];
+    }
+
+    // Check for pending transactions
+    const billsWithStatus = await Promise.all((data || []).map(async (bill) => {
+        const { data: transactions } = await supabase
+            .from('transactions')
+            .select('status')
+            .eq('bill_id', bill.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        return {
+            ...bill,
+            latest_transaction_status: transactions?.status
+        };
+    }));
+
+    return billsWithStatus;
+}
+
+export async function getPaymentHistory(unitId: string) {
+    const supabase = await createClient();
+    if (!unitId) return [];
+
+    // 1. Get bill IDs for the unit
+    const { data: bills, error: billsError } = await supabase
+        .from('bills')
+        .select('id, bill_number, unit_id')
+        .eq('unit_id', unitId);
+
+    if (billsError) {
+        console.error('[getPaymentHistory] Error fetching bills:', billsError);
+        return [];
+    }
+
+    if (!bills || bills.length === 0) {
+        return [];
+    }
+
+    const billIds = bills.map(b => b.id);
+
+    // 2. Get payments for these bills
+    const { data: payments, error: paymentsError } = await supabase
+        .from('payments')
+        .select('*')
+        .in('bill_id', billIds)
+        .order('payment_date', { ascending: false });
+
+    if (paymentsError) {
+        console.error('[getPaymentHistory] Error fetching payments:', paymentsError);
+        return [];
+    }
+
+    // 3. Map bills back to payments (frontend expects 'bills' object)
+    const paymentsWithBills = (payments || []).map(p => ({
+        ...p,
+        bills: bills.find(b => b.id === p.bill_id)
+    }));
+
+    return paymentsWithBills;
+}
+
+export async function getPortalAnnouncements(projectId: string) {
+    const supabase = await createClient();
+    if (!projectId) return [];
+
+    const { data, error } = await supabase
+        .from('announcements')
+        .select('id, title, content, category, image_urls, attachments, publish_date, is_pinned')
+        .eq('project_id', projectId)
+        .order('is_pinned', { ascending: false })
+        .order('publish_date', { ascending: false })
+        .limit(10);
+
+    if (error) {
+        console.error('[getPortalAnnouncements] Error:', error);
+        return [];
+    }
+
+    return data || [];
+}
+
+export async function getPortalMaintenanceRequests(unitId: string) {
+    const supabase = await createClient();
+    if (!unitId) return [];
+
+    const { data, error } = await supabase
+        .from('maintenance_requests')
+        .select('*')
+        .eq('unit_id', unitId)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('[getMaintenanceRequests] Error:', error);
+        return [];
+    }
+
+    return data || [];
+}
+
 // Chart of Accounts
 export async function getChartOfAccountsFromDB() {
     const supabase = await createClient()
@@ -165,8 +283,41 @@ export async function createBatchBills(month: string, commonFeeRate: number, pro
 
     console.log('[createBatchBills] Creating', newBills.length, 'bills')
 
-    const { error } = await supabase.from('bills').insert(newBills)
+    const { data: insertedBills, error } = await supabase.from('bills').insert(newBills).select()
     if (error) throw error
+
+    // Post to General Ledger (Accrual Basis: Dr AR, Cr Revenue)
+    const glEntries = []
+    for (const bill of insertedBills) {
+        glEntries.push({
+            transaction_date: bill.created_at, // Or due_date? Usually created_at for invoice date
+            account_code: '1201', // Accounts Receivable
+            debit: bill.total,
+            credit: 0,
+            description: `Invoice #${bill.bill_number} for ${month}`,
+            reference_type: 'bill',
+            reference_id: bill.id,
+            project_id: bill.project_id
+        })
+        glEntries.push({
+            transaction_date: bill.created_at,
+            account_code: '4101', // Common Fee Income (Assuming 4101)
+            debit: 0,
+            credit: bill.total,
+            description: `Common Fee Income for ${month}`,
+            reference_type: 'bill',
+            reference_id: bill.id,
+            project_id: bill.project_id
+        })
+    }
+
+    if (glEntries.length > 0) {
+        const { error: glError } = await supabase.from('general_ledger').insert(glEntries)
+        if (glError) {
+            console.error('[createBatchBills] Error posting to GL:', glError)
+        }
+    }
+
     revalidatePath('/(admin)/billing')
     return { count: newBills.length }
 }
@@ -181,8 +332,36 @@ export async function saveBillToDB(bill: any) {
         billData.bill_number = await generateBillNumber(supabase);
         const [year, month] = billData.month.split('-').map(Number);
         billData.year = year;
-        const { error } = await supabase.from("bills").insert([billData])
+        const { data: insertedBill, error } = await supabase.from("bills").insert([billData]).select().single()
         if (error) throw error
+
+        // Post to General Ledger
+        if (insertedBill) {
+            const glEntries = [
+                {
+                    transaction_date: insertedBill.created_at,
+                    account_code: '1201', // Accounts Receivable
+                    debit: insertedBill.total,
+                    credit: 0,
+                    description: `Invoice #${insertedBill.bill_number}`,
+                    reference_type: 'bill',
+                    reference_id: insertedBill.id,
+                    project_id: insertedBill.project_id
+                },
+                {
+                    transaction_date: insertedBill.created_at,
+                    account_code: '4101', // Common Fee Income
+                    debit: 0,
+                    credit: insertedBill.total,
+                    description: `Income from Invoice #${insertedBill.bill_number}`,
+                    reference_type: 'bill',
+                    reference_id: insertedBill.id,
+                    project_id: insertedBill.project_id
+                }
+            ]
+            const { error: glError } = await supabase.from('general_ledger').insert(glEntries)
+            if (glError) console.error('[saveBillToDB] Error posting to GL:', glError)
+        }
     }
     revalidatePath("/(admin)/billing")
 }
@@ -2155,4 +2334,87 @@ export async function getCashFlowStatement(
         beginningCash,
         endingCash
     };
+}
+
+// Backfill Actions
+export async function backfillRevenueGL(projectId?: string | null) {
+    const supabase = await createClient()
+    console.log('[backfillRevenueGL] Starting backfill...')
+
+    // 1. Get all bills
+    let query = supabase.from('bills').select('*')
+    if (projectId) {
+        query = query.eq('project_id', projectId)
+    }
+    const { data: bills, error: billsError } = await query
+    if (billsError) throw billsError
+
+    if (!bills || bills.length === 0) {
+        return { success: true, count: 0, message: 'No bills found' }
+    }
+
+    // 2. Get existing GL entries for bills
+    const billIds = bills.map(b => b.id)
+
+    // Chunking for fetching existing GL
+    const existingBillIds = new Set()
+    const fetchChunkSize = 1000
+    for (let i = 0; i < billIds.length; i += fetchChunkSize) {
+        const chunk = billIds.slice(i, i + fetchChunkSize)
+        const { data: existingGL, error: glError } = await supabase
+            .from('general_ledger')
+            .select('reference_id')
+            .eq('reference_type', 'bill')
+            .in('reference_id', chunk)
+
+        if (glError) throw glError
+        existingGL?.forEach(gl => existingBillIds.add(gl.reference_id))
+    }
+
+    const billsToBackfill = bills.filter(b => !existingBillIds.has(b.id))
+
+    console.log(`[backfillRevenueGL] Found ${bills.length} bills, ${existingBillIds.size} already have GL entries. Backfilling ${billsToBackfill.length} bills.`)
+
+    if (billsToBackfill.length === 0) {
+        return { success: true, count: 0, message: 'All bills already have GL entries' }
+    }
+
+    // 3. Insert GL entries
+    const glEntries = []
+    for (const bill of billsToBackfill) {
+        glEntries.push({
+            transaction_date: bill.created_at,
+            account_code: '1201', // Accounts Receivable
+            debit: bill.total,
+            credit: 0,
+            description: `Invoice #${bill.bill_number} (Backfill)`,
+            reference_type: 'bill',
+            reference_id: bill.id,
+            project_id: bill.project_id
+        })
+        glEntries.push({
+            transaction_date: bill.created_at,
+            account_code: '4101', // Common Fee Income
+            debit: 0,
+            credit: bill.total,
+            description: `Income from Invoice #${bill.bill_number} (Backfill)`,
+            reference_type: 'bill',
+            reference_id: bill.id,
+            project_id: bill.project_id
+        })
+    }
+
+    // Insert in chunks of 500 (1000 entries)
+    const insertChunkSize = 500
+    for (let i = 0; i < glEntries.length; i += insertChunkSize) {
+        const chunk = glEntries.slice(i, i + insertChunkSize)
+        const { error } = await supabase.from('general_ledger').insert(chunk)
+        if (error) {
+            console.error('[backfillRevenueGL] Error inserting chunk:', error)
+            throw error
+        }
+    }
+
+    revalidatePath('/(admin)/dashboard')
+    return { success: true, count: billsToBackfill.length, message: `Backfilled ${billsToBackfill.length} bills` }
 }

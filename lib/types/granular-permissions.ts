@@ -117,6 +117,12 @@ export const SUPER_ADMIN_PERMISSIONS: Record<string, ModulePermissions> = {
     displayName: 'รายงาน',
     canAccess: true,
     actions: { view: true, add: false, edit: false, delete: false, print: true, export: true }
+  },
+  system: {
+    module: 'system',
+    displayName: 'ระบบ',
+    canAccess: true,
+    actions: { view: true, add: true, edit: true, delete: true, print: true, export: true }
   }
 }
 
@@ -207,11 +213,17 @@ export const COMPANY_ADMIN_PERMISSIONS: Record<string, ModulePermissions> = {
     displayName: 'รายงาน',
     canAccess: true,
     actions: { view: true, add: false, edit: false, delete: false, print: true, export: true }
+  },
+  system: {
+    module: 'system',
+    displayName: 'ระบบ',
+    canAccess: true,
+    actions: { view: true, add: true, edit: true, delete: true, print: true, export: true }
   }
 }
 
 // =============================================
-// PROJECT ADMIN - จัดการโครงการ ไม่ลบบิล/โครงการ
+// PROJECT_ADMIN - จัดการโครงการ ไม่ลบบิล/โครงการ
 // =============================================
 export const PROJECT_ADMIN_PERMISSIONS: Record<string, ModulePermissions> = {
   companies: {
@@ -303,6 +315,12 @@ export const PROJECT_ADMIN_PERMISSIONS: Record<string, ModulePermissions> = {
     displayName: 'รายงาน',
     canAccess: true,
     actions: { view: true, add: false, edit: false, delete: false, print: true, export: true }
+  },
+  system: {
+    module: 'system',
+    displayName: 'ระบบ',
+    canAccess: true,
+    actions: { view: true, add: true, edit: true, delete: true, print: true, export: true }
   }
 }
 
@@ -488,7 +506,7 @@ export const ROLE_PERMISSIONS_MAP: Record<string, Record<string, ModulePermissio
 export function getModulePermissionsForRole(roleName: string, moduleName: string): ModulePermissions | null {
   const rolePermissions = ROLE_PERMISSIONS_MAP[roleName]
   if (!rolePermissions) return null
-  
+
   return rolePermissions[moduleName] || null
 }
 
@@ -502,7 +520,7 @@ export function canPerformAction(
 ): boolean {
   const modulePerms = getModulePermissionsForRole(roleName, moduleName)
   if (!modulePerms || !modulePerms.canAccess) return false
-  
+
   return modulePerms.actions[action] || false
 }
 
@@ -512,7 +530,7 @@ export function canPerformAction(
 export function getAccessibleModulesForRole(roleName: string): ModulePermissions[] {
   const rolePermissions = ROLE_PERMISSIONS_MAP[roleName]
   if (!rolePermissions) return []
-  
+
   return Object.values(rolePermissions).filter(module => module.canAccess)
 }
 
@@ -522,13 +540,13 @@ export function getAccessibleModulesForRole(roleName: string): ModulePermissions
 export function getAllowedActions(roleName: string, moduleName: string): Action[] {
   const modulePerms = getModulePermissionsForRole(roleName, moduleName)
   if (!modulePerms || !modulePerms.canAccess) return []
-  
+
   const allowedActions: Action[] = []
   Object.entries(modulePerms.actions).forEach(([action, allowed]) => {
     if (allowed) {
       allowedActions.push(action as Action)
     }
   })
-  
+
   return allowedActions
 }

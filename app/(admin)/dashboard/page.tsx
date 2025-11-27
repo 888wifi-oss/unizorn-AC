@@ -26,6 +26,7 @@ import {
   PiggyBank
 } from "lucide-react"
 import { getDashboardStats, type DashboardStats } from "@/lib/actions/dashboard-actions"
+import { backfillRevenueGL } from "@/lib/supabase/actions"
 import { testAvailableTables } from "@/lib/supabase/test-available-tables"
 import { useProjectContext } from "@/lib/contexts/project-context"
 import { getCurrentUser } from "@/lib/utils/mock-auth"
@@ -74,6 +75,7 @@ function DashboardContent() {
   const [hasError, setHasError] = useState(false)
   const [diagnostics, setDiagnostics] = useState<{ success: boolean; results?: Record<string, { success: boolean; error?: string; count?: number }>; error?: string } | null>(null)
   const [runningDiagnostics, setRunningDiagnostics] = useState(false)
+  const [fixingData, setFixingData] = useState(false)
   const loadDashboardDataRef = useRef<() => Promise<void>>(async () => { })
   const latestCallIdRef = useRef(0)
   const loadingLockRef = useRef(false)
@@ -254,6 +256,30 @@ function DashboardContent() {
       setDiagnostics({ success: false, error: err?.message || 'ไม่สามารถตรวจสอบฐานข้อมูลได้' })
     } finally {
       setRunningDiagnostics(false)
+    }
+  }
+
+  const handleFixData = async () => {
+    try {
+      setFixingData(true)
+      const res = await backfillRevenueGL(selectedProjectId)
+      if (res.success) {
+        toast({
+          title: "ดำเนินการสำเร็จ",
+          description: res.message || `ปรับปรุงข้อมูลเรียบร้อย (${res.count} รายการ)`,
+        })
+        loadDashboardData()
+      } else {
+        throw new Error(res.message)
+      }
+    } catch (err: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: err?.message || "ไม่สามารถปรับปรุงข้อมูลได้",
+        variant: "destructive",
+      })
+    } finally {
+      setFixingData(false)
     }
   }
 
@@ -438,6 +464,21 @@ function DashboardContent() {
                 ตรวจสอบฐานข้อมูล
               </>
             )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleFixData}
+            disabled={fixingData}
+            title="ปรับปรุงข้อมูลรายรับ"
+            className="text-orange-600 border-orange-200 hover:bg-orange-50"
+          >
+            {fixingData ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            <span className="ml-2 hidden sm:inline">Fix Data</span>
           </Button>
         </div>
       </div>
