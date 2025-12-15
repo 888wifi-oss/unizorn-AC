@@ -137,7 +137,7 @@ export async function getChartOfAccountsFromDB() {
 export async function getUnitsFromDB(projectId?: string | null) {
     const supabase = await createClient()
     try {
-        let query = supabase.from("units").select("*").order("unit_number")
+        let query = supabase.from("units").select("*").order("unit_number").limit(10000)
 
         if (projectId) {
             query = query.eq('project_id', projectId)

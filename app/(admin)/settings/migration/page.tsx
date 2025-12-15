@@ -16,6 +16,8 @@ import { StaffImportDialog } from "./staff-import-dialog"
 import { APImportDialog } from "./ap-import-dialog"
 import { ARImportDialog } from "./ar-import-dialog"
 
+import { OutstandingDebtorsImportDialog } from "./outstanding-debtors-import-dialog"
+
 export default function MigrationPage() {
     const [isDebtImportOpen, setIsDebtImportOpen] = useState(false)
     const [isVendorsImportOpen, setIsVendorsImportOpen] = useState(false)
@@ -26,6 +28,7 @@ export default function MigrationPage() {
     const [isStaffImportOpen, setIsStaffImportOpen] = useState(false)
     const [isAPImportOpen, setIsAPImportOpen] = useState(false)
     const [isARImportOpen, setIsARImportOpen] = useState(false)
+    const [isOutstandingImportOpen, setIsOutstandingImportOpen] = useState(false)
 
     return (
         <div className="space-y-6">
@@ -54,6 +57,31 @@ export default function MigrationPage() {
                             <Link href="/units">
                                 Go to Units <ArrowRight className="ml-2 h-4 w-4" />
                             </Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+
+                {/* Outstanding Debtors (New) */}
+                <Card className="border-primary bg-primary/5 shadow-md">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Receipt className="h-5 w-5 text-primary" />
+                            Outstanding Debtors
+                        </CardTitle>
+                        <CardDescription>
+                            Import outstanding bills from Excel (Specific Format).
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Upload "ลูกหนี้คงค้าง" Excel file to import water, common fee, and other outstanding bills.
+                        </p>
+                        <Button
+                            className="w-full"
+                            onClick={() => setIsOutstandingImportOpen(true)}
+                        >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import Outstanding
                         </Button>
                     </CardContent>
                 </Card>
@@ -263,15 +291,15 @@ export default function MigrationPage() {
                     </CardContent>
                 </Card>
 
-                {/* Beginning Balances (Common Fee Debt) */}
-                <Card className="border-primary/20 bg-primary/5">
+                {/* Beginning Balances (Legacy) */}
+                <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 text-primary" />
-                            Beginning Balances
+                            <FileText className="h-5 w-5 text-gray-500" />
+                            Beginning Balances (Legacy)
                         </CardTitle>
                         <CardDescription>
-                            Import outstanding common fee debt.
+                            Import outstanding common fee debt (Old format).
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -280,6 +308,7 @@ export default function MigrationPage() {
                         </p>
                         <Button
                             className="w-full"
+                            variant="outline"
                             onClick={() => setIsDebtImportOpen(true)}
                         >
                             <Upload className="mr-2 h-4 w-4" />
@@ -288,15 +317,15 @@ export default function MigrationPage() {
                     </CardContent>
                 </Card>
 
-                {/* Other AR */}
-                <Card className="border-primary/20 bg-primary/5">
+                {/* Other AR (Legacy) */}
+                <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <Receipt className="h-5 w-5 text-primary" />
-                            Other AR
+                            <Receipt className="h-5 w-5 text-gray-500" />
+                            Other AR (Legacy)
                         </CardTitle>
                         <CardDescription>
-                            Import other receivables (Water, Electric, Fines).
+                            Import other receivables (Old format).
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -305,6 +334,7 @@ export default function MigrationPage() {
                         </p>
                         <Button
                             className="w-full"
+                            variant="outline"
                             onClick={() => setIsARImportOpen(true)}
                         >
                             <Upload className="mr-2 h-4 w-4" />
@@ -325,32 +355,32 @@ export default function MigrationPage() {
                         <span>Import Units & Owners (Required first)</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">2</div>
+                        <div className="h-6 w-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">2</div>
+                        <span className="font-semibold text-primary">Import Outstanding Debtors (New Excel Format)</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">3</div>
                         <span>Import Staff & Team</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold">3</div>
+                        <div className="h-6 w-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold">4</div>
                         <span>Import Chart of Accounts (Optional - if custom)</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold">4</div>
+                        <div className="h-6 w-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold">5</div>
                         <span>Import Vendors & Fixed Assets</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center text-xs font-bold">5</div>
+                        <div className="h-6 w-6 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center text-xs font-bold">6</div>
                         <span>Import Utility Meters & Initial Readings</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold">6</div>
+                        <div className="h-6 w-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold">7</div>
                         <span>Import Vehicles & Parcels</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xs font-bold">7</div>
+                        <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xs font-bold">8</div>
                         <span>Import Accounts Payable (Unpaid Invoices)</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                        <div className="h-6 w-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">8</div>
-                        <span>Import Beginning Balances & Other AR</span>
                     </div>
                 </div>
             </div>
@@ -390,6 +420,10 @@ export default function MigrationPage() {
             <ARImportDialog
                 open={isARImportOpen}
                 onOpenChange={setIsARImportOpen}
+            />
+            <OutstandingDebtorsImportDialog
+                open={isOutstandingImportOpen}
+                onOpenChange={setIsOutstandingImportOpen}
             />
         </div>
     )

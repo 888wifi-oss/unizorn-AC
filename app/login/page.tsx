@@ -22,7 +22,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
-  const currentUser = getCurrentUser()
+  const [error, setError] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser())
+  }, [])
 
   const isLoggedIn = currentUser && currentUser.id !== "guest"
 
@@ -32,9 +37,12 @@ export default function LoginPage() {
 
   const loadUsers = async () => {
     setLoadingUsers(true)
+    setError(null)
     const result = await getLoginUsers()
     if (result.success) {
       setUsers(result.users || [])
+    } else {
+      setError(result.error || "Failed to load users")
     }
     setLoadingUsers(false)
   }
@@ -255,6 +263,14 @@ export default function LoginPage() {
                   <div className="text-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="text-sm text-muted-foreground mt-2">กำลังโหลดผู้ใช้...</p>
+                  </div>
+                ) : error ? (
+                  <div className="p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg text-center">
+                    <p className="text-sm text-red-800 dark:text-red-200 font-medium mb-2">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
+                    <p className="text-xs text-red-600 dark:text-red-300">{error}</p>
+                    <Button variant="outline" size="sm" onClick={loadUsers} className="mt-3">
+                      ลองใหม่
+                    </Button>
                   </div>
                 ) : (
                   <>
