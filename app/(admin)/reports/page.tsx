@@ -95,7 +95,7 @@ export default function ReportsPage() {
       setAllUnits(unitsData)
       setAllBills(billsData)
       setAllPayments(paymentsData)
-      
+
       console.log('[Reports] Total data from DB:', {
         units: unitsData.length,
         bills: billsData.length,
@@ -334,6 +334,12 @@ export default function ReportsPage() {
         subtitle="สรุปรายงานทางการเงินและสถิติต่างๆ"
         action={
           <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <a href="/reports/daily-receipts">รายงานรายวันรับ</a>
+            </Button>
+            <Button asChild variant="outline">
+              <a href="/reports/daily-payments">รายงานรายวันจ่าย</a>
+            </Button>
             <Button onClick={exportAllReports} variant="default">
               <Download className="w-4 h-4 mr-2" />
               ส่งออกทั้งหมด

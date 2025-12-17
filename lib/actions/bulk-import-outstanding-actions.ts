@@ -91,27 +91,26 @@ async function validateBeforeImport(
                 validItems.map(item => unitMap.get(item.unit_number.toLowerCase().trim())).filter(Boolean)
             ))
 
-            // Check for duplicates by invoice_number + unit_id + bill_date
+            // Check for duplicates by invoice_number + unit_id + issue_date
             const itemsWithInvoice = validItems.filter(item => item.invoice_number)
             if (itemsWithInvoice.length > 0) {
                 const invoiceNumbers = itemsWithInvoice.map(item => item.invoice_number).filter(Boolean)
+                // Try to select description/notes if available, but don't fail if column doesn't exist
                 const { data: existingBills, error: dbError } = await supabase
                     .from('bills')
-                    .select('id, unit_id, description, bill_date, due_date')
+                    .select('id, unit_id, issue_date, due_date')
                     .in('unit_id', unitIds)
                     .in('project_id', [projectId])
-                    .not('description', 'is', null)
 
                 if (!dbError && existingBills) {
                     for (const item of itemsWithInvoice) {
                         const unitId = unitMap.get(item.unit_number.toLowerCase().trim())
                         if (!unitId) continue
 
-                        // Check if description contains invoice_number
+                        // Check for duplicate by unit_id + issue_date (simplified check without description)
                         const matchingBill = existingBills.find((bill: any) => {
                             return bill.unit_id === unitId &&
-                                bill.description?.includes(`[${item.invoice_number}]`) &&
-                                bill.bill_date === item.bill_date
+                                bill.issue_date === item.bill_date
                         })
 
                         if (matchingBill) {
@@ -122,12 +121,13 @@ async function validateBeforeImport(
                 }
             }
 
-            // Check for duplicates by unit_id + bill_date + service_name + amount (for items without invoice_number)
+            // Check for duplicates by unit_id + issue_date + amount (for items without invoice_number)
+            // Simplified check without description since column may not exist
             const itemsWithoutInvoice = validItems.filter(item => !item.invoice_number)
             if (itemsWithoutInvoice.length > 0) {
                 const { data: existingBills, error: dbError } = await supabase
                     .from('bills')
-                    .select('id, unit_id, bill_date, due_date, total, description')
+                    .select('id, unit_id, issue_date, due_date, total')
                     .in('unit_id', unitIds)
                     .in('project_id', [projectId])
 
@@ -136,11 +136,11 @@ async function validateBeforeImport(
                         const unitId = unitMap.get(item.unit_number.toLowerCase().trim())
                         if (!unitId) continue
 
+                        // Simplified duplicate check: unit_id + issue_date + amount
                         const matchingBill = existingBills.find((bill: any) => {
                             return bill.unit_id === unitId &&
-                                bill.bill_date === item.bill_date &&
-                                Math.abs(parseFloat(bill.total) - item.amount) < 0.01 && // Allow small floating point differences
-                                bill.description?.includes(item.service_name || '')
+                                bill.issue_date === item.bill_date &&
+                                Math.abs(parseFloat(bill.total) - item.amount) < 0.01 // Allow small floating point differences
                         })
 
                         if (matchingBill) {
@@ -261,34 +261,75 @@ export async function importOutstandingDebtors(items: OutstandingDebtorItem[], p
                 const [yearFromDate, monthFromDate] = month.split('-').map(Number)
 
                 // Save bill and track for rollback
-                const billData = {
+                // Note: bill_type and description are optional - only include if columns exist in database
+                // Initialize fee columns
+                let commonFee = 0
+                let waterFee = 0
+                let electricityFee = 0
+                let otherFee = 0
+
+                // Map amount to specific fee column based on billType
+                switch (billType) {
+                    case 'water':
+                        waterFee = item.amount
+                        break
+                    case 'electricity':
+                        electricityFee = item.amount
+                        break
+                    case 'common_fee':
+                        commonFee = item.amount
+                        break
+                    default:
+                        // fine, insurance, other -> other_fee
+                        otherFee = item.amount
+                        break
+                }
+
+                // Save bill and track for rollback
+                const billData: any = {
                     unit_id: unitId,
-                    bill_type: finalBillType as any,
                     total: item.amount,
-                    amount: item.amount,
-                    bill_date: item.bill_date,
+                    common_fee: commonFee,
+                    water_fee: waterFee,
+                    electricity_fee: electricityFee,
+                    other_fee: otherFee,
+                    // issue_date: item.bill_date, // Field does not exist in DB
+                    created_at: item.bill_date, // Use created_at to backdate the bill
                     due_date: item.due_date,
                     month: month,
-                    description: fullDescription,
                     status: 'pending' as const,
-                    project_id: projectId
+                    project_id: projectId,
+                    description: item.description,
+                    reference_number: item.invoice_number,
+                    year: yearFromDate // Add year to billData
                 }
 
-                // Generate bill number based on bill_date month/year
-                const { data: lastBill } = await supabase
-                    .from('bills')
-                    .select('bill_number')
-                    .like('bill_number', `BILL-${yearFromDate}${String(monthFromDate).padStart(2, '0')}-%`)
-                    .order('bill_number', { ascending: false })
-                    .limit(1)
-                    .maybeSingle()
+                // Generate bill number or use existing from import
+                let billNumber = ''
 
-                let sequence = 1
-                if (lastBill) {
-                    const lastNum = parseInt(lastBill.bill_number.split('-').pop() || '0', 10)
-                    sequence = lastNum + 1
+                if (item.invoice_number) {
+                    // Use the invoice number from the import file
+                    billNumber = item.invoice_number
+                } else {
+                    // Generate bill number based on bill_date month/year
+                    const billMonthStr = `${yearFromDate}${String(monthFromDate).padStart(2, '0')}`
+                    const { data: lastBill } = await supabase
+                        .from('bills')
+                        .select('bill_number')
+                        .like('bill_number', `BILL-${billMonthStr}-%`)
+                        .order('bill_number', { ascending: false })
+                        .limit(1)
+                        .maybeSingle() // Use maybeSingle as it might return null
+
+                    let nextSequence = 1
+                    if (lastBill) {
+                        const parts = lastBill.bill_number.split('-')
+                        if (parts.length === 3) {
+                            nextSequence = parseInt(parts[2]) + 1
+                        }
+                    }
+                    billNumber = `BILL-${billMonthStr}-${nextSequence.toString().padStart(3, '0')}`
                 }
-                const billNumber = `BILL-${yearFromDate}${String(monthFromDate).padStart(2, '0')}-${String(sequence).padStart(3, '0')}`
 
                 // Insert bill
                 const { data: insertedBill, error: billError } = await supabase
@@ -296,7 +337,6 @@ export async function importOutstandingDebtors(items: OutstandingDebtorItem[], p
                     .insert([{
                         ...billData,
                         bill_number: billNumber,
-                        year: yearFromDate
                     }])
                     .select()
                     .single()
@@ -359,7 +399,7 @@ export async function importOutstandingDebtors(items: OutstandingDebtorItem[], p
                 // If we've created bills but hit an error, rollback everything
                 if (createdBills.length > 0) {
                     console.log(`[importOutstandingDebtors] Rolling back ${createdBills.length} bills due to error`)
-                    
+
                     // Delete GL entries first (foreign key constraint)
                     if (createdGLEntries.length > 0) {
                         await supabase
@@ -428,14 +468,15 @@ export async function importOutstandingDebtors(items: OutstandingDebtorItem[], p
             console.error('[importOutstandingDebtors] Error logging audit:', auditError)
         }
 
-        // Revalidate billing path
+        // Revalidate billing and accounts-receivable paths
         revalidatePath("/(admin)/billing")
+        revalidatePath("/(admin)/accounts-receivable")
 
     } catch (error: any) {
         // Final rollback if something catastrophic happens
         if (createdBills.length > 0) {
             console.error(`[importOutstandingDebtors] Catastrophic error, rolling back ${createdBills.length} bills`)
-            
+
             if (createdGLEntries.length > 0) {
                 await supabase
                     .from('general_ledger')
@@ -456,6 +497,15 @@ export async function importOutstandingDebtors(items: OutstandingDebtorItem[], p
             failed: results.failed,
             errors: results.errors,
             debug: results.debug
+        }
+    }
+
+    // If we processed items but imported 0, mark as failed
+    if (results.imported === 0 && items.length > 0) {
+        return {
+            ...results,
+            success: false,
+            error: "No records were imported. Please check the errors list."
         }
     }
 

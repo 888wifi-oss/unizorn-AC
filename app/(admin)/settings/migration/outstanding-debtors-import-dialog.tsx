@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -32,6 +33,7 @@ interface OutstandingDebtorsImportDialogProps {
 
 export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }: OutstandingDebtorsImportDialogProps) {
     const { toast } = useToast()
+    const router = useRouter()
     const { selectedProjectId } = useProjectContext()
     const [file, setFile] = useState<File | null>(null)
     const [previewData, setPreviewData] = useState<OutstandingDebtorItem[]>([])
@@ -129,7 +131,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
 
         // Download file
         XLSX.writeFile(wb, 'outstanding_debtors_template.xlsx')
-        
+
         toast({
             title: "Template Downloaded",
             description: "Template file has been downloaded. Please fill in your data.",
@@ -291,7 +293,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
         setImportStatus('importing')
         setImportProgress(0)
         addLog(`Starting import of ${previewData.length} records...`)
-        
+
         try {
             // Simulate progress updates (since we can't track real-time progress from server action)
             const progressInterval = setInterval(() => {
@@ -305,7 +307,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
             }, 200)
 
             const result = await importOutstandingDebtors(previewData, selectedProjectId)
-            
+
             clearInterval(progressInterval)
             setImportProgress(100)
 
@@ -319,7 +321,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
                 const validationErrors = (result as any).validationErrors as string[]
                 setErrors(validationErrors)
                 addLog(`Validation failed with ${validationErrors.length} errors`)
-                
+
                 toast({
                     title: "Validation Failed",
                     description: `Please fix ${validationErrors.length} validation error(s) before importing.`,
@@ -332,7 +334,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
                 const unmappedUnits = (result as any).unmappedUnits as string[]
                 const unitErrors = unmappedUnits.map(unit => `Unit '${unit}' not found in system`)
                 setErrors([...errors, ...unitErrors])
-                
+
                 toast({
                     title: "Unit Mapping Failed",
                     description: `${unmappedUnits.length} unit(s) could not be mapped. Please check unit numbers.`,
@@ -348,6 +350,8 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
                     description: `Successfully imported ${(result as any).imported} records.`,
                 })
                 if ((result as any).imported > 0) {
+                    // Refresh router to update pages
+                    router.refresh()
                     // Wait a bit to show success status
                     setTimeout(() => {
                         onOpenChange(false)
@@ -366,15 +370,15 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
                 setImportStatus('error')
                 const errorMessage = (result as any).error || "Unknown error occurred"
                 addLog(`Import failed: ${errorMessage}`)
-                
+
                 // If there are specific errors, add them to the errors list
                 if ((result as any).errors && Array.isArray((result as any).errors)) {
-                    const errorList = (result as any).errors.map((e: any) => 
+                    const errorList = (result as any).errors.map((e: any) =>
                         e.message || `${e.unit}: ${e.error}`
                     )
                     setErrors(errorList)
                 }
-                
+
                 toast({
                     title: "Import Failed",
                     description: errorMessage,
@@ -429,7 +433,7 @@ export function OutstandingDebtorsImportDialog({ open, onOpenChange, onSuccess }
                             </Button>
                         </div>
                     </div>
-                    
+
                     <Alert variant="default" className="bg-blue-50 border-blue-200">
                         <AlertCircle className="h-4 w-4 text-blue-600" />
                         <AlertTitle className="text-blue-800">Format Guide</AlertTitle>

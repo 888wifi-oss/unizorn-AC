@@ -8,13 +8,25 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Download, AlertTriangle, Clock, DollarSign, Users } from "lucide-react"
+import { Download, AlertTriangle, Clock, DollarSign, Users, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { formatDate } from "@/lib/date-formatter"
 import { useSettings } from "@/lib/settings-context"
 import { Badge } from "@/components/ui/badge"
 import { useProjectContext } from "@/lib/contexts/project-context"
 import { getCurrentUser } from "@/lib/utils/mock-auth"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { deleteBill, bulkDeleteBills } from "@/lib/actions/billing-actions"
 
 interface ARItem {
   unit_id: string
@@ -40,6 +52,7 @@ interface OutstandingBill {
   due_date: string
   days_overdue: number
   status: string
+  description?: string
 }
 
 export default function AccountsReceivablePage() {
@@ -52,6 +65,15 @@ export default function AccountsReceivablePage() {
   const [searchTerm, setSearchTerm] = useState("")
   const { toast } = useToast()
   const { settings } = useSettings()
+
+  // Delete state
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [billToDelete, setBillToDelete] = useState<string | null>(null)
+
+  // Bulk Delete state
+  const [selectedBills, setSelectedBills] = useState<string[]>([])
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
 
   const [summary, setSummary] = useState({
     totalAR: 0,
@@ -71,6 +93,7 @@ export default function AccountsReceivablePage() {
 
   const loadData = async () => {
     setIsLoading(true)
+    setSelectedBills([]) // Reset selection on reload
     const supabase = createClient()
 
     try {
@@ -80,24 +103,24 @@ export default function AccountsReceivablePage() {
         .select("*, units(unit_number, owner_name)")
         .in("status", ["unpaid", "pending"])
         .order("due_date")
-      
+
       if (selectedProjectId && currentUser.role !== 'super_admin') {
         billsQuery = billsQuery.eq('project_id', selectedProjectId)
       }
-      
+
       const { data: billsData } = await billsQuery
 
       if (billsData) {
         setAllOutstandingBills(billsData as any)
         console.log('[AccountsReceivable] Total bills from DB:', billsData.length)
-        
+
         // Filter by selected project (for non-Super Admin) - already filtered in query but keep for consistency
         let filteredBills = billsData
         if (selectedProjectId && currentUser.role !== 'super_admin') {
           filteredBills = billsData.filter((bill: any) => bill.project_id === selectedProjectId)
           console.log('[AccountsReceivable] Filtered bills:', billsData.length, '→', filteredBills.length)
         }
-        
+
         // คำนวณอายุลูกหนี้
         const today = new Date()
         const billsWithAging = filteredBills.map((bill: any) => {
@@ -114,6 +137,7 @@ export default function AccountsReceivablePage() {
             due_date: bill.due_date,
             days_overdue: Math.max(0, daysOverdue),
             status: bill.status,
+            description: bill.description
           }
         })
 
@@ -202,6 +226,91 @@ export default function AccountsReceivablePage() {
     })
   }
 
+  const handleDeleteClick = (id: string) => {
+    setBillToDelete(id)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!billToDelete || !selectedProjectId) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteBill(billToDelete, selectedProjectId)
+      if (result.success) {
+        toast({
+          title: "ลบรายการสำเร็จ",
+          description: "ลบบิลและรายการบันทึกบัญชีเรียบร้อยแล้ว",
+        })
+        loadData() // Refresh data
+      } else {
+        toast({
+          title: "ลบรายการไม่สำเร็จ",
+          description: result.error,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Delete error:", error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถลบรายการได้",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setBillToDelete(null)
+    }
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedBills(filteredBills.map(b => b.id))
+    } else {
+      setSelectedBills([])
+    }
+  }
+
+  const handleSelectBill = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedBills(prev => [...prev, id])
+    } else {
+      setSelectedBills(prev => prev.filter(bid => bid !== id))
+    }
+  }
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedBills.length === 0 || !selectedProjectId) return
+
+    setIsBulkDeleting(true)
+    try {
+      const result = await bulkDeleteBills(selectedBills, selectedProjectId)
+      if (result.success) {
+        toast({
+          title: "ลบรายการสำเร็จ",
+          description: result.message,
+        })
+        loadData()
+      } else {
+        toast({
+          title: "ลบรายการบางส่วนไม่สำเร็จ",
+          description: result.error,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Bulk delete error:", error)
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถลบรายการได้",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkDeleting(false)
+      setShowBulkConfirm(false)
+      setSelectedBills([])
+    }
+  }
+
   const filteredARItems = arItems.filter(
     (item) =>
       item.unit_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -255,7 +364,7 @@ export default function AccountsReceivablePage() {
       bill.unit_number,
       bill.month,
       bill.total.toLocaleString(),
-      formatDate(bill.due_date, settings),
+      formatDate(bill.due_date, settings?.dateFormat, settings?.yearType),
       bill.days_overdue,
       bill.status === "unpaid" ? "ยังไม่ชำระ" : "รอชำระ",
     ])
@@ -281,9 +390,61 @@ export default function AccountsReceivablePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PageHeader title="ลูกหนี้ค้างชำระ (AR)" description="ติดตามและวิเคราะห์ลูกหนี้ค้างชำระตามอายุ" />
+      <PageHeader title="ลูกหนี้ค้างชำระ (AR)" subtitle="ติดตามและวิเคราะห์ลูกหนี้ค้างชำระตามอายุ" />
+
+      {/* AlertDialog for Delete Confirmation */}
+      <AlertDialog open={!!billToDelete} onOpenChange={(open) => !open && setBillToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบรายการ</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบบิลนี้ใช่หรือไม่? การกระทำนี้จะลบบันทึกบัญชีที่เกี่ยวข้องทั้งหมด และไม่สามารถกู้คืนได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmDelete()
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={isDeleting}
+            >
+              {isDeleting ? "กำลังลบ..." : "ยืนยันลบ"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog for Bulk Delete Confirmation */}
+      <AlertDialog open={showBulkConfirm} onOpenChange={setShowBulkConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบ {selectedBills.length} รายการ</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบบิลที่เลือกทั้งหมดใช่หรือไม่? การกระทำนี้จะลบบันทึกบัญชีที่เกี่ยวข้อง และไม่สามารถกู้คืนได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmBulkDelete()
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={isBulkDeleting}
+            >
+              {isBulkDeleting ? "กำลังลบ..." : "ยืนยันลบทั้งหมด"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="container mx-auto p-6 space-y-6">
+        {/* ... Summary Cards (Same as before) ... */}
+
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
@@ -331,7 +492,7 @@ export default function AccountsReceivablePage() {
           </Card>
         </div>
 
-        {/* Aging Summary */}
+        {/* ... Aging Summary (Same as before) ... */}
         <Card>
           <CardHeader>
             <CardTitle>สรุปอายุลูกหนี้</CardTitle>
@@ -362,7 +523,7 @@ export default function AccountsReceivablePage() {
           </CardContent>
         </Card>
 
-        {/* Search */}
+        {/* Search & Bulk Actions */}
         <div className="flex items-center gap-4">
           <div className="flex-1">
             <Input
@@ -371,16 +532,27 @@ export default function AccountsReceivablePage() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {selectedBills.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setShowBulkConfirm(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              ลบ {selectedBills.length} รายการ
+            </Button>
+          )}
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="aging" className="space-y-4">
+          {/* ... TabsList ... */}
           <TabsList>
             <TabsTrigger value="aging">รายงานอายุลูกหนี้</TabsTrigger>
             <TabsTrigger value="bills">รายการบิลค้างชำระ</TabsTrigger>
           </TabsList>
 
           <TabsContent value="aging" className="space-y-4">
+            {/* ... Aging Table (Unchanged) ... */}
             <div className="flex justify-end">
               <Button onClick={exportAgingReport} variant="outline">
                 <Download className="mr-2 h-4 w-4" />
@@ -439,6 +611,7 @@ export default function AccountsReceivablePage() {
           </TabsContent>
 
           <TabsContent value="bills" className="space-y-4">
+            {/* ... Bills content ... */}
             <div className="flex justify-end">
               <Button onClick={exportOutstandingBills} variant="outline">
                 <Download className="mr-2 h-4 w-4" />
@@ -451,30 +624,47 @@ export default function AccountsReceivablePage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[30px]">
+                        <Checkbox
+                          checked={filteredBills.length > 0 && selectedBills.length === filteredBills.length}
+                          onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
+                        />
+                      </TableHead>
                       <TableHead>เลขที่บิล</TableHead>
+                      <TableHead>รายละเอียด</TableHead>
                       <TableHead>เลขห้อง</TableHead>
                       <TableHead>เดือน</TableHead>
                       <TableHead className="text-right">ยอดเงิน</TableHead>
                       <TableHead>วันครบกำหนด</TableHead>
                       <TableHead className="text-center">จำนวนวันค้าง</TableHead>
                       <TableHead>สถานะ</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredBills.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={9} className="text-center text-muted-foreground">
                           ไม่มีบิลค้างชำระ
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredBills.map((bill) => (
                         <TableRow key={bill.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedBills.includes(bill.id)}
+                              onCheckedChange={(checked) => handleSelectBill(bill.id, checked as boolean)}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono">{bill.bill_number}</TableCell>
+                          <TableCell className="max-w-[200px] truncate" title={bill.description || ""}>
+                            {bill.description || "-"}
+                          </TableCell>
                           <TableCell className="font-medium">{bill.unit_number}</TableCell>
                           <TableCell>{bill.month}</TableCell>
                           <TableCell className="text-right font-semibold">฿{bill.total.toLocaleString()}</TableCell>
-                          <TableCell>{formatDate(bill.due_date, settings)}</TableCell>
+                          <TableCell>{formatDate(bill.due_date, settings?.dateFormat, settings?.yearType)}</TableCell>
                           <TableCell className="text-center">
                             <Badge
                               variant={
@@ -494,6 +684,16 @@ export default function AccountsReceivablePage() {
                             <Badge variant={bill.status === "unpaid" ? "destructive" : "secondary"}>
                               {bill.status === "unpaid" ? "ยังไม่ชำระ" : "รอชำระ"}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDeleteClick(bill.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))

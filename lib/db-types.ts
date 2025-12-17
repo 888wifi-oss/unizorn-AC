@@ -25,6 +25,8 @@ export interface Bill {
   other_fee: number
   total: number
   status: "paid" | "pending" | "overdue"
+  description?: string
+  reference_number?: string
   due_date: string
   created_at: string
   updated_at: string
