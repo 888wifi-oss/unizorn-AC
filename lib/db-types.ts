@@ -10,6 +10,8 @@ export interface Unit {
   status: "occupied" | "vacant" | "maintenance"
   created_at: string
   updated_at: string
+  preferred_language?: "th" | "en"
+  line_user_id?: string
 }
 
 export interface Bill {
