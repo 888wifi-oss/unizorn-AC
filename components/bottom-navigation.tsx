@@ -18,7 +18,8 @@ import { LucideIcon } from "lucide-react"
 interface NavItem {
   icon: LucideIcon
   label: string
-  tab: string | null
+  tab?: string | null
+  href?: string // Direct link support
   exact?: boolean
   badge?: number | null
 }
@@ -28,7 +29,8 @@ const navItemsThai: NavItem[] = [
   { icon: FileText, label: "บิล", tab: "bills", badge: null },
   { icon: Package, label: "พัสดุ", tab: "parcels", badge: null },
   { icon: MessageSquare, label: "ประกาศ", tab: "announcements", badge: null },
-  { icon: Wrench, label: "ซ่อม", tab: "maintenance", badge: null }
+  { icon: Wrench, label: "ซ่อม", tab: "maintenance", badge: null },
+  { icon: User, label: "โปรไฟล์", href: "/portal/profile" }
 ]
 
 const navItemsEnglish: NavItem[] = [
@@ -36,7 +38,8 @@ const navItemsEnglish: NavItem[] = [
   { icon: FileText, label: "Bills", tab: "bills", badge: null },
   { icon: Package, label: "Parcels", tab: "parcels", badge: null },
   { icon: MessageSquare, label: "News", tab: "announcements", badge: null },
-  { icon: Wrench, label: "Repair", tab: "maintenance", badge: null }
+  { icon: Wrench, label: "Repair", tab: "maintenance", badge: null },
+  { icon: User, label: "Profile", href: "/portal/profile" }
 ]
 
 export default function BottomNavigation() {
@@ -89,17 +92,20 @@ export default function BottomNavigation() {
     return currentTab === tab
   }
 
-  const handleNavClick = async (tab: string | null) => {
-    console.log('[BottomNav] Clicked tab:', tab)
+  const handleNavClick = async (item: NavItem) => {
+    console.log('[BottomNav] Clicked item:', item.label)
     console.log('[BottomNav] Current URL before:', window.location.href)
 
     // Wait for router to update URL
-    if (!tab) {
+    if (item.href) {
+      console.log('[BottomNav] Navigating to ' + item.href)
+      await router.push(item.href)
+    } else if (!item.tab) {
       console.log('[BottomNav] Navigating to /portal/dashboard')
       await router.push("/portal/dashboard", { scroll: false })
     } else {
-      console.log('[BottomNav] Navigating to /portal/dashboard?tab=' + tab)
-      await router.push(`/portal/dashboard?tab=${tab}`, { scroll: false })
+      console.log('[BottomNav] Navigating to /portal/dashboard?tab=' + item.tab)
+      await router.push(`/portal/dashboard?tab=${item.tab}`, { scroll: false })
     }
 
     console.log('[BottomNav] Current URL after:', window.location.href)
@@ -122,8 +128,8 @@ export default function BottomNavigation() {
 
           return (
             <button
-              key={item.tab || "home"}
-              onClick={() => handleNavClick(item.tab)}
+              key={item.label}
+              onClick={() => handleNavClick(item)}
               className={cn(
                 "flex flex-col items-center justify-center flex-1 h-full transition-colors",
                 active

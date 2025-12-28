@@ -22,7 +22,8 @@ import { ApplyReadingToBillDialog } from "./apply-reading-to-bill-dialog"
 import { ExcelImportDialog } from "./excel-import-dialog"
 import { calculateUtilityCost } from "@/lib/utils/meter-calculations"
 import * as XLSX from "xlsx"
-import { Download, Upload } from "lucide-react"
+import { Download, Upload, BarChart, Activity } from "lucide-react"
+import { UtilityReportsDialog } from "./utility-reports-dialog"
 
 interface UtilityMeter {
   id: string
@@ -65,6 +66,7 @@ export default function UtilityMetersPage() {
   const [isReadingDialogOpen, setIsReadingDialogOpen] = useState(false)
   const [isApplyToBillDialogOpen, setIsApplyToBillDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false)
   const [selectedMeter, setSelectedMeter] = useState<UtilityMeter | null>(null)
   const [selectedMeterReadingId, setSelectedMeterReadingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -465,6 +467,14 @@ export default function UtilityMetersPage() {
               Export Template
             </Button>
             <Button
+              onClick={() => setIsReportsDialogOpen(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Activity className="w-4 h-4 mr-2" />
+              รายงานสถิติ
+            </Button>
+            <Button
               onClick={() => setIsImportDialogOpen(true)}
               variant="outline"
               size="sm"
@@ -797,6 +807,14 @@ export default function UtilityMetersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reports Dialog */}
+      <UtilityReportsDialog
+        open={isReportsDialogOpen}
+        onOpenChange={setIsReportsDialogOpen}
+        meters={allMeters}
+        units={units}
+      />
 
       {/* Batch Add Meters Dialog */}
       <BatchAddMetersDialog

@@ -1,7 +1,7 @@
 "use server"
-
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+import { LineService } from "@/lib/line-service"
 
 // Granular Actions for Portal Performance
 
@@ -319,6 +319,32 @@ export async function createBatchBills(month: string, commonFeeRate: number, pro
     }
 
     revalidatePath('/(admin)/billing')
+
+    // LINE Notification for Batch Bills
+    if (insertedBills && insertedBills.length > 0) {
+        // We do this asynchronously without awaiting to not block the UI response
+        (async () => {
+            console.log('[createBatchBills] Sending LINE notifications...')
+            for (const bill of insertedBills) {
+                try {
+                    // Fetch unit number to send notification (LineService now uses unit_number)
+                    const { data: unit } = await supabase.from('units').select('unit_number').eq('id', bill.unit_id).single()
+
+                    if (unit && unit.unit_number) {
+                        await LineService.sendMessage(unit.unit_number, [
+                            {
+                                type: 'text',
+                                text: `📦 แจ้งเตือนบิลใหม่\nเรียกเก็บค่าส่วนกลางประจำเดือน ${month}\nยอดชำระ: ${bill.total.toLocaleString()} บาท\nกำหนดชำระ: ${new Date(bill.due_date).toLocaleDateString('th-TH')}\n\nกรุณาชำระผ่านแอปพลิเคชัน`
+                            }
+                        ])
+                    }
+                } catch (err) {
+                    console.error('[createBatchBills] Failed to notify unit:', bill.unit_id, err)
+                }
+            }
+        })()
+    }
+
     return { count: newBills.length }
 }
 
@@ -335,7 +361,6 @@ export async function saveBillToDB(bill: any) {
         const { data: insertedBill, error } = await supabase.from("bills").insert([billData]).select().single()
         if (error) throw error
 
-        // Post to General Ledger
         if (insertedBill) {
             const glEntries = [
                 {
@@ -361,6 +386,23 @@ export async function saveBillToDB(bill: any) {
             ]
             const { error: glError } = await supabase.from('general_ledger').insert(glEntries)
             if (glError) console.error('[saveBillToDB] Error posting to GL:', glError)
+
+            // LINE Notification for Single Bill
+            try {
+                // Fetch unit number to send notification (LineService now uses unit_number)
+                const { data: unit } = await supabase.from('units').select('unit_number').eq('id', insertedBill.unit_id).single()
+
+                if (unit && unit.unit_number) {
+                    await LineService.sendMessage(unit.unit_number, [
+                        {
+                            type: 'text',
+                            text: `📄 แจ้งเตือนบิลใหม่\nเลขที่: ${insertedBill.bill_number}\nยอดชำระ: ${insertedBill.total.toLocaleString()} บาท\nกำหนดชำระ: ${new Date(insertedBill.due_date).toLocaleDateString('th-TH')}`
+                        }
+                    ])
+                }
+            } catch (err) {
+                console.error('[saveBillToDB] Failed to send LINE notification:', err)
+            }
         }
     }
     revalidatePath("/(admin)/billing")
@@ -1891,6 +1933,21 @@ export async function saveAnnouncement(announcement: any) {
         } catch (notificationError) {
             console.error('[saveAnnouncement] Notification error:', notificationError);
             // Don't fail the announcement save if notification fails
+        }
+
+        // LINE Broadcast
+        try {
+            if (data.project_id) {
+                await LineService.broadcastToProject(data.project_id, [
+                    {
+                        type: 'text',
+                        text: `📢 ประกาศใหม่!\n${data.title}\n\n${data.content?.substring(0, 100)}${data.content?.length > 100 ? '...' : ''}\n\nดูรายละเอียดเพิ่มเติมได้ที่แอปพลิเคชัน`
+                    }
+                ])
+                console.log('[saveAnnouncement] LINE broadcast sent')
+            }
+        } catch (lineError) {
+            console.error('[saveAnnouncement] LINE broadcast error:', lineError)
         }
     }
 

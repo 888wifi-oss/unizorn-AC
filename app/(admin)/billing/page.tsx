@@ -62,24 +62,24 @@ export default function BillingPage() {
     setLoading(true)
     try {
       const [billsData, unitsResult] = await Promise.all([getBillsFromDB(), getUnitsFromDB()])
-      
+
       // Store all data
       setAllBills(billsData)
       console.log('[Billing] Total bills from DB:', billsData.length)
-      
+
       if (unitsResult.success) {
         setAllUnits(unitsResult.units || [])
         console.log('[Billing] Total units from DB:', unitsResult.units?.length || 0)
       }
-      
+
       // Filter by selected project (for non-Super Admin)
       if (selectedProjectId && currentUser.role !== 'super_admin') {
         const filteredBills = billsData.filter((bill: any) => bill.project_id === selectedProjectId)
         const filteredUnits = (unitsResult.units || []).filter((unit: any) => unit.project_id === selectedProjectId)
-        
+
         console.log('[Billing] Filtered bills:', billsData.length, '→', filteredBills.length)
         console.log('[Billing] Filtered units:', unitsResult.units?.length || 0, '→', filteredUnits.length)
-        
+
         setBills(filteredBills)
         setUnits(filteredUnits)
       } else {
@@ -215,7 +215,12 @@ export default function BillingPage() {
       other_fee: Number(bill.other_fee || bill.otherFee || 0),
       total: Number(bill.total || 0),
     }
-    await generateBillPDFV4(billData, unit, settings, pdfLanguage)
+
+    // Determine language: Unit preference has priority, fallback to page selector
+    const language = unit?.preferred_language || pdfLanguage;
+    console.log(`[Billing] Generating PDF for unit ${unit?.unit_number}. Language: ${language} (Preferred: ${unit?.preferred_language}, Page: ${pdfLanguage})`);
+
+    await generateBillPDFV4(billData, unit, settings, language)
     toast({
       title: "สำเร็จ",
       description: "เปิดหน้าต่างพิมพ์บิลแล้ว",
@@ -311,9 +316,9 @@ export default function BillingPage() {
                 <span className="md:hidden">รายเดือน</span>
               </Button>
               {selectedBillIds.size > 0 && (
-                <Button 
-                  onClick={() => setIsBulkOperationsDialogOpen(true)} 
-                  className="bg-purple-600 hover:bg-purple-700" 
+                <Button
+                  onClick={() => setIsBulkOperationsDialogOpen(true)}
+                  className="bg-purple-600 hover:bg-purple-700"
                   size="sm"
                 >
                   <MoreHorizontal className="w-4 h-4 mr-1 md:mr-2" />
@@ -326,9 +331,9 @@ export default function BillingPage() {
                 <span className="hidden md:inline">ส่งออก</span>
                 <span className="md:hidden">Export</span>
               </Button>
-              <Button 
-                onClick={() => window.location.href = '/billing/reports'} 
-                variant="outline" 
+              <Button
+                onClick={() => window.location.href = '/billing/reports'}
+                variant="outline"
                 size="sm"
               >
                 <BarChart3 className="w-4 h-4 mr-1 md:mr-2" />
@@ -569,7 +574,7 @@ export default function BillingPage() {
             </div>
             <div>
               <Label htmlFor="commonFee">
-                ค่าส่วนกลาง * 
+                ค่าส่วนกลาง *
                 <span className="text-xs text-gray-500 ml-2">({BILLING_ACCOUNT_CODES.COMMON_FEE})</span>
               </Label>
               <Input
@@ -582,7 +587,7 @@ export default function BillingPage() {
             </div>
             <div>
               <Label htmlFor="waterFee">
-                ค่าน้ำ 
+                ค่าน้ำ
                 <span className="text-xs text-gray-500 ml-2">({BILLING_ACCOUNT_CODES.WATER_FEE})</span>
               </Label>
               <Input
@@ -595,7 +600,7 @@ export default function BillingPage() {
             </div>
             <div>
               <Label htmlFor="electricityFee">
-                ค่าไฟ 
+                ค่าไฟ
                 <span className="text-xs text-gray-500 ml-2">({BILLING_ACCOUNT_CODES.ELECTRICITY_FEE})</span>
               </Label>
               <Input
@@ -608,7 +613,7 @@ export default function BillingPage() {
             </div>
             <div>
               <Label htmlFor="parkingFee">
-                ค่าจอดรถ 
+                ค่าจอดรถ
                 <span className="text-xs text-gray-500 ml-2">({BILLING_ACCOUNT_CODES.PARKING_FEE})</span>
               </Label>
               <Input
@@ -621,7 +626,7 @@ export default function BillingPage() {
             </div>
             <div>
               <Label htmlFor="otherFee">
-                ค่าใช้จ่ายอื่นๆ 
+                ค่าใช้จ่ายอื่นๆ
                 <span className="text-xs text-gray-500 ml-2">({BILLING_ACCOUNT_CODES.OTHER_FEE})</span>
               </Label>
               <Input

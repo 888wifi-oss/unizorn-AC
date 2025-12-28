@@ -122,9 +122,14 @@ function PortalContent({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               {/* Desktop: แสดง Bell เท่านั้น เพราะ Dashboard มี controls อื่นแล้ว */}
-              {unitNumber && (
-                <NotificationBell unitNumber={unitNumber} />
-              )}
+              <div className="flex items-center gap-4">
+                {unitNumber && (
+                  <NotificationBell unitNumber={unitNumber} />
+                )}
+                <a href="/portal/profile" className="text-sm font-medium text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">
+                  โปรไฟล์
+                </a>
+              </div>
             </div>
           </div>
         </div>

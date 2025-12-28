@@ -1,636 +1,377 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { PageHeader } from "@/components/page-header"
-import { Button } from "@/components/ui/button"
+import { useSettings } from "@/lib/settings-context"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
+import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase/client"
-import { useProjectContext } from "@/lib/contexts/project-context"
-import { getCurrentUser } from "@/lib/utils/mock-auth"
-import { Plus, Pencil, Trash2, Eye, Image as ImageIcon, Palette } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
+import { Separator } from "@/components/ui/separator"
+import { FileText, Save, RefreshCw, Printer } from "lucide-react"
+import { toast } from "sonner"
+// @ts-ignore
+import { HexColorPicker } from "react-colorful"
 
-interface InvoiceTemplate {
-  id: string
-  project_id?: string
-  template_name: string
-  template_type: string
-  is_default: boolean
-  is_active: boolean
-  header_logo_url?: string
-  header_company_name?: string
-  header_address?: string
-  header_phone?: string
-  header_email?: string
-  header_tax_id?: string
-  footer_text?: string
-  footer_bank_accounts?: any
-  layout_settings?: any
-  template_html?: string
+// Mock data for preview
+const MOCK_BILL = {
+  bill_number: "6812000068",
+  month: "12/2568",
+  common_fee: 2500,
+  water_fee: 350,
+  electricity_fee: 1200,
+  parking_fee: 0,
+  other_fee: 100,
+  total: 4150,
+  due_date: new Date().toISOString()
+}
+
+const MOCK_UNIT = {
+  unit_number: "71/55",
+  owner_name: "คุณ สุชาดา ชัยสุข",
+  ratio: "71/056"
 }
 
 export default function InvoiceTemplatesPage() {
-  const { selectedProjectId } = useProjectContext()
-  const currentUser = getCurrentUser()
-  const { toast } = useToast()
-  const supabase = createClient()
+  const { settings, updateSettings } = useSettings()
+  const [activeTab, setActiveTab] = useState("general")
+  const [localSettings, setLocalSettings] = useState(settings.invoice)
+  const [isClient, setIsClient] = useState(false)
 
-  const [loading, setLoading] = useState(false)
-  const [templates, setTemplates] = useState<InvoiceTemplate[]>([])
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-  const [editingTemplate, setEditingTemplate] = useState<InvoiceTemplate | null>(null)
-  const [previewTemplate, setPreviewTemplate] = useState<InvoiceTemplate | null>(null)
-  const [formData, setFormData] = useState({
-    template_name: "",
-    template_type: "invoice",
-    header_logo_url: "",
-    header_company_name: "",
-    header_address: "",
-    header_phone: "",
-    header_email: "",
-    header_tax_id: "",
-    footer_text: "",
-    primary_color: "#1e40af",
-    secondary_color: "#3b82f6",
-    font_family: "Sarabun, sans-serif",
-    is_active: true,
-    is_default: false,
-  })
-
+  // Sync with global settings on load
   useEffect(() => {
-    loadTemplates()
-  }, [selectedProjectId])
+    setIsClient(true)
+    if (settings.invoice) {
+      setLocalSettings(settings.invoice)
+    }
+  }, [settings.invoice])
 
-  const loadTemplates = async () => {
-    setLoading(true)
-    try {
-      let query = supabase
-        .from('invoice_templates')
-        .select('*')
-        .order('is_default', { ascending: false })
-        .order('created_at', { ascending: false })
+  const handleSave = () => {
+    updateSettings({
+      invoice: localSettings
+    })
+    toast.success("บันทึกการตั้งค่าเรียบร้อยแล้ว")
+  }
 
-      if (selectedProjectId && currentUser.role !== 'super_admin') {
-        query = query.eq('project_id', selectedProjectId)
-      }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      setTemplates(data || [])
-    } catch (error: any) {
-      console.error('[Invoice Templates] Error loading:', error)
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถโหลดข้อมูลได้",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
+  const handleReset = () => {
+    if (settings.invoice) {
+      setLocalSettings(settings.invoice)
+      toast.info("รีเซ็ตค่าเป็นปัจจุบัน")
     }
   }
 
-  const handleOpenDialog = (template?: InvoiceTemplate) => {
-    if (template) {
-      setEditingTemplate(template)
-      setFormData({
-        template_name: template.template_name,
-        template_type: template.template_type,
-        header_logo_url: template.header_logo_url || "",
-        header_company_name: template.header_company_name || "",
-        header_address: template.header_address || "",
-        header_phone: template.header_phone || "",
-        header_email: template.header_email || "",
-        header_tax_id: template.header_tax_id || "",
-        footer_text: template.footer_text || "",
-        primary_color: template.layout_settings?.primaryColor || "#1e40af",
-        secondary_color: template.layout_settings?.secondaryColor || "#3b82f6",
-        font_family: template.layout_settings?.fontFamily || "Sarabun, sans-serif",
-        is_active: template.is_active,
-        is_default: template.is_default,
-      })
-    } else {
-      setEditingTemplate(null)
-      setFormData({
-        template_name: "",
-        template_type: "invoice",
-        header_logo_url: "",
-        header_company_name: "",
-        header_address: "",
-        header_phone: "",
-        header_email: "",
-        header_tax_id: "",
-        footer_text: "",
-        primary_color: "#1e40af",
-        secondary_color: "#3b82f6",
-        font_family: "Sarabun, sans-serif",
-        is_active: true,
-        is_default: false,
-      })
-    }
-    setIsDialogOpen(true)
-  }
-
-  const handleSave = async () => {
-    if (!formData.template_name.trim()) {
-      toast({
-        title: "กรุณากรอกชื่อ",
-        description: "กรุณากรอกชื่อแม่แบบ",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const layoutSettings = {
-        primaryColor: formData.primary_color,
-        secondaryColor: formData.secondary_color,
-        fontFamily: formData.font_family,
-      }
-
-      const templateData: any = {
-        project_id: selectedProjectId || null,
-        template_name: formData.template_name,
-        template_type: formData.template_type,
-        header_logo_url: formData.header_logo_url || null,
-        header_company_name: formData.header_company_name || null,
-        header_address: formData.header_address || null,
-        header_phone: formData.header_phone || null,
-        header_email: formData.header_email || null,
-        header_tax_id: formData.header_tax_id || null,
-        footer_text: formData.footer_text || null,
-        layout_settings: layoutSettings,
-        is_active: formData.is_active,
-        is_default: formData.is_default,
-      }
-
-      // If setting as default, unset other defaults
-      if (formData.is_default) {
-        await supabase
-          .from('invoice_templates')
-          .update({ is_default: false })
-          .neq('id', editingTemplate?.id || '00000000-0000-0000-0000-000000000000')
-      }
-
-      if (editingTemplate) {
-        const { error } = await supabase
-          .from('invoice_templates')
-          .update(templateData)
-          .eq('id', editingTemplate.id)
-
-        if (error) throw error
-
-        toast({
-          title: "อัพเดทสำเร็จ",
-          description: "อัพเดทแม่แบบเรียบร้อยแล้ว",
-        })
-      } else {
-        const { error } = await supabase
-          .from('invoice_templates')
-          .insert([templateData])
-
-        if (error) throw error
-
-        toast({
-          title: "สร้างสำเร็จ",
-          description: "สร้างแม่แบบเรียบร้อยแล้ว",
-        })
-      }
-
-      setIsDialogOpen(false)
-      loadTemplates()
-    } catch (error: any) {
-      console.error('[Invoice Templates] Error saving:', error)
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถบันทึกได้",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบแม่แบบนี้?')) {
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('invoice_templates')
-        .delete()
-        .eq('id', id)
-
-      if (error) throw error
-
-      toast({
-        title: "ลบสำเร็จ",
-        description: "ลบแม่แบบเรียบร้อยแล้ว",
-      })
-
-      loadTemplates()
-    } catch (error: any) {
-      console.error('[Invoice Templates] Error deleting:', error)
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: error.message || "ไม่สามารถลบได้",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handlePreview = (template: InvoiceTemplate) => {
-    setPreviewTemplate(template)
-    setIsPreviewOpen(true)
-  }
+  if (!isClient) return null
 
   return (
-    <div>
-      <PageHeader
-        title="แม่แบบใบแจ้งหนี้"
-        subtitle="จัดการแม่แบบสำหรับใบแจ้งหนี้และใบเสร็จ"
-        action={
-          <Button onClick={() => handleOpenDialog()} className="bg-blue-600 hover:bg-blue-700" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            เพิ่มแม่แบบ
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">แม่แบบใบแจ้งหนี้/ใบเสร็จ</h1>
+          <p className="text-muted-foreground">ปรับแต่งรูปแบบเอกสารให้ตรงกับความต้องการขององค์กร</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleReset}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            คืนค่า
           </Button>
-        }
-      />
-
-      <div className="bg-white rounded-lg border border-gray-200 mt-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ชื่อแม่แบบ</TableHead>
-              <TableHead>ประเภท</TableHead>
-              <TableHead>สถานะ</TableHead>
-              <TableHead>ค่าเริ่มต้น</TableHead>
-              <TableHead className="text-right">จัดการ</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
-                  กำลังโหลด...
-                </TableCell>
-              </TableRow>
-            ) : templates.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                  ไม่พบข้อมูล
-                </TableCell>
-              </TableRow>
-            ) : (
-              templates.map((template) => (
-                <TableRow key={template.id}>
-                  <TableCell className="font-medium">{template.template_name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">
-                      {template.template_type === 'invoice' ? 'ใบแจ้งหนี้' : 
-                       template.template_type === 'receipt' ? 'ใบเสร็จ' : 
-                       template.template_type === 'quote' ? 'ใบเสนอราคา' : template.template_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {template.is_active ? (
-                      <Badge className="bg-green-100 text-green-700">ใช้งาน</Badge>
-                    ) : (
-                      <Badge variant="secondary">ปิดใช้งาน</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {template.is_default ? (
-                      <Badge className="bg-blue-100 text-blue-700">ค่าเริ่มต้น</Badge>
-                    ) : (
-                      <span className="text-gray-400">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handlePreview(template)} title="Preview">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(template)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(template.id)}>
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+          <Button onClick={handleSave}>
+            <Save className="mr-2 h-4 w-4" />
+            บันทึก
+          </Button>
+        </div>
       </div>
 
-      {/* Edit/Create Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTemplate ? 'แก้ไขแม่แบบ' : 'เพิ่มแม่แบบ'}
-            </DialogTitle>
-          </DialogHeader>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Editor Panel */}
+        <div className="lg:col-span-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>ตั้งค่าเอกสาร</CardTitle>
+              <CardDescription>ปรับแต่งข้อมูลและรูปแบบ</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="general">ข้อมูลทั่วไป</TabsTrigger>
+                  <TabsTrigger value="design">ดีไซน์</TabsTrigger>
+                </TabsList>
 
-          <Tabs defaultValue="basic" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="basic">ข้อมูลพื้นฐาน</TabsTrigger>
-              <TabsTrigger value="header">Header & Logo</TabsTrigger>
-              <TabsTrigger value="layout">Layout & Colors</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="basic" className="space-y-4 py-4">
-              <div>
-                <Label>ชื่อแม่แบบ *</Label>
-                <Input
-                  value={formData.template_name}
-                  onChange={(e) => setFormData({ ...formData, template_name: e.target.value })}
-                  placeholder="เช่น Template แบบมาตรฐาน"
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
-                <Label>ประเภท</Label>
-                <Select value={formData.template_type} onValueChange={(value) => setFormData({ ...formData, template_type: value })}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="invoice">ใบแจ้งหนี้</SelectItem>
-                    <SelectItem value="receipt">ใบเสร็จ</SelectItem>
-                    <SelectItem value="quote">ใบเสนอราคา</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label>เปิดใช้งาน</Label>
-                <Switch
-                  checked={formData.is_active}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label>ตั้งเป็นค่าเริ่มต้น</Label>
-                <Switch
-                  checked={formData.is_default}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_default: checked })}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="header" className="space-y-4 py-4">
-              <div>
-                <Label>Logo URL</Label>
-                <Input
-                  value={formData.header_logo_url}
-                  onChange={(e) => setFormData({ ...formData, header_logo_url: e.target.value })}
-                  placeholder="https://example.com/logo.png"
-                  className="mt-2"
-                />
-                {formData.header_logo_url && (
-                  <img src={formData.header_logo_url} alt="Logo preview" className="mt-2 max-h-32" onError={(e) => { e.currentTarget.style.display = 'none' }} />
-                )}
-              </div>
-
-              <div>
-                <Label>ชื่อบริษัท</Label>
-                <Input
-                  value={formData.header_company_name}
-                  onChange={(e) => setFormData({ ...formData, header_company_name: e.target.value })}
-                  placeholder="ชื่อบริษัท"
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
-                <Label>ที่อยู่</Label>
-                <Textarea
-                  value={formData.header_address}
-                  onChange={(e) => setFormData({ ...formData, header_address: e.target.value })}
-                  placeholder="ที่อยู่บริษัท"
-                  className="mt-2"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>เบอร์โทร</Label>
-                  <Input
-                    value={formData.header_phone}
-                    onChange={(e) => setFormData({ ...formData, header_phone: e.target.value })}
-                    placeholder="02-123-4567"
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label>อีเมล</Label>
-                  <Input
-                    value={formData.header_email}
-                    onChange={(e) => setFormData({ ...formData, header_email: e.target.value })}
-                    placeholder="info@example.com"
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label>เลขประจำตัวผู้เสียภาษี</Label>
-                <Input
-                  value={formData.header_tax_id}
-                  onChange={(e) => setFormData({ ...formData, header_tax_id: e.target.value })}
-                  placeholder="1234567890123"
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
-                <Label>ข้อความ Footer</Label>
-                <Textarea
-                  value={formData.footer_text}
-                  onChange={(e) => setFormData({ ...formData, footer_text: e.target.value })}
-                  placeholder="ขอบคุณที่ใช้บริการ"
-                  className="mt-2"
-                  rows={2}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="layout" className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>สีหลัก</Label>
-                  <div className="flex items-center gap-2 mt-2">
+                <TabsContent value="general" className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>ชื่อนิติบุคคล/บริษัท</Label>
                     <Input
-                      type="color"
-                      value={formData.primary_color}
-                      onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                      className="w-16 h-10"
-                    />
-                    <Input
-                      value={formData.primary_color}
-                      onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                      placeholder="#1e40af"
+                      value={localSettings.companyName}
+                      onChange={(e) => setLocalSettings({ ...localSettings, companyName: e.target.value })}
                     />
                   </div>
-                </div>
-                <div>
-                  <Label>สีรอง</Label>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Input
-                      type="color"
-                      value={formData.secondary_color}
-                      onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
-                      className="w-16 h-10"
-                    />
-                    <Input
-                      value={formData.secondary_color}
-                      onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
-                      placeholder="#3b82f6"
+                  <div className="space-y-2">
+                    <Label>ที่อยู่</Label>
+                    <Textarea
+                      className="h-20"
+                      value={localSettings.address}
+                      onChange={(e) => setLocalSettings({ ...localSettings, address: e.target.value })}
                     />
                   </div>
-                </div>
-              </div>
+                  <div className="space-y-2">
+                    <Label>เลขประจำตัวผู้เสียภาษี</Label>
+                    <Input
+                      value={localSettings.taxId}
+                      onChange={(e) => setLocalSettings({ ...localSettings, taxId: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>หมายเหตุท้ายเอกสาร</Label>
+                    <Textarea
+                      value={localSettings.note}
+                      onChange={(e) => setLocalSettings({ ...localSettings, note: e.target.value })}
+                      placeholder="เช่น การชำระเงินล่าช้ามีค่าปรับ..."
+                    />
+                  </div>
+                </TabsContent>
 
-              <div>
-                <Label>ฟอนต์</Label>
-                <Select value={formData.font_family} onValueChange={(value) => setFormData({ ...formData, font_family: value })}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Sarabun, sans-serif">Sarabun</SelectItem>
-                    <SelectItem value="Kanit, sans-serif">Kanit</SelectItem>
-                    <SelectItem value="Prompt, sans-serif">Prompt</SelectItem>
-                    <SelectItem value="Arial, sans-serif">Arial</SelectItem>
-                    <SelectItem value="Helvetica, sans-serif">Helvetica</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              ยกเลิก
-            </Button>
-            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
-              {editingTemplate ? 'อัพเดท' : 'สร้าง'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Preview Dialog */}
-      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Preview แม่แบบ: {previewTemplate?.template_name}</DialogTitle>
-          </DialogHeader>
-          {previewTemplate && (
-            <div className="py-4">
-              <div className="bg-white border-2 border-gray-200 rounded-lg p-8" style={{ fontFamily: previewTemplate.layout_settings?.fontFamily || 'Sarabun, sans-serif' }}>
-                {/* Header */}
-                <div className="flex items-start justify-between mb-6 pb-6 border-b">
-                  <div className="flex-1">
-                    {previewTemplate.header_logo_url && (
-                      <img src={previewTemplate.header_logo_url} alt="Logo" className="h-16 mb-4" />
-                    )}
-                    {previewTemplate.header_company_name && (
-                      <h2 className="text-2xl font-bold" style={{ color: previewTemplate.layout_settings?.primaryColor }}>
-                        {previewTemplate.header_company_name}
-                      </h2>
-                    )}
-                    {previewTemplate.header_address && (
-                      <p className="text-sm text-gray-600 mt-2">{previewTemplate.header_address}</p>
-                    )}
-                    <div className="flex gap-4 mt-2 text-sm text-gray-600">
-                      {previewTemplate.header_phone && <span>📞 {previewTemplate.header_phone}</span>}
-                      {previewTemplate.header_email && <span>✉️ {previewTemplate.header_email}</span>}
+                <TabsContent value="design" className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>จำนวนต้นฉบับ/สำเนา</Label>
+                    <div className="flex items-center gap-4 border p-4 rounded-md">
+                      <Label className="flex-1">
+                        {localSettings.copyCount === 1 ? 'ฉบับเดียว (เต็ม A4)' : '2 ฉบับ (ต้นฉบับ + สำเนา)'}
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">1</span>
+                        <Switch
+                          checked={localSettings.copyCount === 2}
+                          onCheckedChange={(checked) => setLocalSettings({ ...localSettings, copyCount: checked ? 2 : 1 })}
+                        />
+                        <span className="text-sm text-muted-foreground">2</span>
+                      </div>
                     </div>
-                    {previewTemplate.header_tax_id && (
-                      <p className="text-sm text-gray-600 mt-1">เลขประจำตัวผู้เสียภาษี: {previewTemplate.header_tax_id}</p>
-                    )}
                   </div>
-                  <div className="text-right">
-                    <h1 className="text-3xl font-bold" style={{ color: previewTemplate.layout_settings?.primaryColor }}>
-                      ใบแจ้งหนี้
-                    </h1>
-                    <p className="text-sm text-gray-600 mt-2">เลขที่: BILL-2024-001</p>
-                    <p className="text-sm text-gray-600">วันที่: {new Date().toLocaleDateString('th-TH')}</p>
-                  </div>
-                </div>
 
-                {/* Sample Content */}
-                <div className="mb-6">
-                  <div className="bg-gray-50 p-4 rounded mb-4">
-                    <p className="font-semibold">ห้องชุด: 101</p>
-                    <p className="text-sm text-gray-600">เดือน: มกราคม 2567</p>
+                  <div className="space-y-2">
+                    <Label>สีหัวข้อ (Accent Color)</Label>
+                    <div className="flex gap-4">
+                      <div
+                        className="w-10 h-10 rounded-full border shadow-sm"
+                        style={{ backgroundColor: localSettings.accentColor }}
+                      />
+                      <Input
+                        value={localSettings.accentColor}
+                        onChange={(e) => setLocalSettings({ ...localSettings, accentColor: e.target.value })}
+                        className="font-mono"
+                      />
+                    </div>
+                    {/* Simple color presets */}
+                    <div className="flex gap-2 mt-2">
+                      {['#000000', '#2563eb', '#16a34a', '#dc2626', '#d97706', '#7c3aed'].map(color => (
+                        <button
+                          key={color}
+                          className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                          style={{ backgroundColor: color }}
+                          onClick={() => setLocalSettings({ ...localSettings, accentColor: color })}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr style={{ backgroundColor: previewTemplate.layout_settings?.secondaryColor, color: 'white' }}>
-                        <th className="p-2 text-left">รายการ</th>
-                        <th className="p-2 text-right">จำนวนเงิน</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b">
-                        <td className="p-2">ค่าส่วนกลาง</td>
-                        <td className="p-2 text-right">฿1,500.00</td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="p-2">ค่าน้ำ</td>
-                        <td className="p-2 text-right">฿350.00</td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="p-2">ค่าไฟฟ้า</td>
-                        <td className="p-2 text-right">฿850.00</td>
-                      </tr>
-                      <tr className="font-bold" style={{ backgroundColor: '#f3f4f6' }}>
-                        <td className="p-2">รวมทั้งหมด</td>
-                        <td className="p-2 text-right" style={{ color: previewTemplate.layout_settings?.primaryColor }}>
-                          ฿2,700.00
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
 
-                {/* Footer */}
-                {previewTemplate.footer_text && (
-                  <div className="mt-6 pt-6 border-t text-center text-sm text-gray-600">
-                    {previewTemplate.footer_text}
+                  <div className="space-y-2 pt-4">
+                    <Label>หัวเอกสาร (ไทย/อังกฤษ)</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        value={localSettings.headerText.invoice.th}
+                        onChange={(e) => setLocalSettings({
+                          ...localSettings,
+                          headerText: {
+                            ...localSettings.headerText,
+                            invoice: { ...localSettings.headerText.invoice, th: e.target.value }
+                          }
+                        })}
+                        placeholder="ใบแจ้งหนี้"
+                      />
+                      <Input
+                        value={localSettings.headerText.invoice.en}
+                        onChange={(e) => setLocalSettings({
+                          ...localSettings,
+                          headerText: {
+                            ...localSettings.headerText,
+                            invoice: { ...localSettings.headerText.invoice, en: e.target.value }
+                          }
+                        })}
+                        placeholder="Invoice"
+                      />
+                    </div>
                   </div>
-                )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Preview Panel */}
+        <div className="lg:col-span-8">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle>ตัวอย่างเอกสาร</CardTitle>
+                <Badge variant="outline" className="font-normal">A4</Badge>
               </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>
-              ปิด
-            </Button>
-            <Button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700">
-              พิมพ์
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </CardHeader>
+            <CardContent className="flex-1 bg-gray-100 p-8 overflow-auto min-h-[600px] flex justify-center items-start">
+              <InvoicePreview settings={localSettings} bill={MOCK_BILL} unit={MOCK_UNIT} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
 
+function InvoicePreview({ settings, bill, unit }: { settings: any, bill: any, unit: any }) {
+  // This component replicates the structure of generateBillPDFV4 but in React/HTML
+  // Uses inline styles to approximate the PDF output
+
+  const isDouble = settings.copyCount === 2;
+
+  const SingleInvoice = ({ isCopy = false }) => (
+    <div
+      className="bg-white p-8 text-[12px] relative flex flex-col"
+      style={{
+        width: isDouble ? '148mm' : '210mm', // A5 width if double, A4 if single (minus margins approx)
+        height: isDouble ? '190mm' : '270mm', // Adjust as needed
+        fontFamily: 'Sarabun, sans-serif'
+      }}
+    >
+      {/* Header */}
+      <div className="flex justify-between items-start mb-4">
+        <div className="w-[60%]">
+          <h2 className="font-bold text-lg mb-1">{settings.companyName}</h2>
+          <p className="whitespace-pre-wrap text-gray-600">{settings.address}</p>
+          <p className="mt-1">เลขประจำตัวผู้เสียภาษี {settings.taxId}</p>
+        </div>
+        <div className="text-right">
+          <div className="border border-black px-4 py-1 mb-2 inline-block font-bold">
+            {settings.headerText.invoice.th} {isCopy ? '(สำเนา)' : '(ต้นฉบับ)'}
+          </div>
+          <div className="text-sm">เลขที่: {bill.bill_number}</div>
+        </div>
+      </div>
+
+      {/* Customer Info */}
+      <div className="border flex mb-4">
+        <div className="w-[60%] border-r p-2">
+          <div className="grid grid-cols-[80px_1fr] gap-1">
+            <span className="font-bold">ได้รับเงินจาก:</span>
+            <span>{unit.owner_name}</span>
+            <span className="font-bold">ที่อยู่:</span>
+            <span>{settings.address}</span>
+            {/* Note: In real app, customer address might be different, but using company address as placeholder relative to unit */}
+          </div>
+        </div>
+        <div className="w-[40%] p-2">
+          <div className="grid grid-cols-[100px_1fr] gap-1 text-right md:text-left">
+            <span className="font-bold">วันที่:</span>
+            <span>16/12/2568</span>
+            <span className="font-bold">บ้านเลขที่:</span>
+            <span>{unit.unit_number}</span>
+            <span className="font-bold">หมายเลขห้องชุด:</span>
+            <span>{unit.ratio}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1">
+        <table className="w-full border-collapse border">
+          <thead>
+            <tr>
+              <th className="border p-1 w-10 text-center">ลำดับ</th>
+              <th className="border p-1 w-24 text-center">ใบแจ้งหนี้</th>
+              <th className="border p-1 text-center">รายการ</th>
+              <th className="border p-1 w-20 text-right">ราคา</th>
+              <th className="border p-1 w-20 text-right">จำนวนเงิน</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="align-top h-8">
+              <td className="border-x p-1 text-center">1</td>
+              <td className="border-x p-1 text-center">{bill.bill_number}</td>
+              <td className="border-x p-1">
+                ค่าใช้จ่ายส่วนกลาง ({bill.month})
+              </td>
+              <td className="border-x p-1 text-right">{bill.common_fee.toFixed(2)}</td>
+              <td className="border-x p-1 text-right">{bill.common_fee.toFixed(2)}</td>
+            </tr>
+            <tr className="align-top h-8">
+              <td className="border-x p-1 text-center"></td>
+              <td className="border-x p-1 text-center"></td>
+              <td className="border-x p-1">
+                ค่าน้ำ ({bill.month})
+              </td>
+              <td className="border-x p-1 text-right">{bill.water_fee.toFixed(2)}</td>
+              <td className="border-x p-1 text-right">{bill.water_fee.toFixed(2)}</td>
+            </tr>
+            {/* Fill empty rows to make it look like a full page/half page form */}
+            {[...Array(5)].map((_, i) => (
+              <tr key={i} className="h-8">
+                <td className="border-x"></td>
+                <td className="border-x"></td>
+                <td className="border-x"></td>
+                <td className="border-x"></td>
+                <td className="border-x"></td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3} className="border p-1 font-bold">ตัวอักษร: สี่พันหนึ่งร้อยห้าสิบบาทถ้วน</td>
+              <td className="border p-1 font-bold text-right">รวม</td>
+              <td className="border p-1 font-bold text-right">{bill.total.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Footer / Payment Info */}
+      <div className="mt-4 border p-2 text-sm">
+        <div className="font-bold mb-1">ชำระโดย:</div>
+        <div>เงินโอน ธนาคาร SCB CA 9094 วันที่ ...</div>
+        <div className="font-bold mt-2">หมายเหตุ:</div>
+        <div className="text-xs text-gray-500">{settings.note}</div>
+      </div>
+
+      {/* Signatures */}
+      <div className="mt-8 flex justify-between text-center px-4">
+        <div className="w-40">
+          <div className="border-b border-black mb-2 h-8"></div>
+          <div className="text-xs">ผู้รับเงิน</div>
+        </div>
+        <div className="w-40">
+          <div className="border-b border-black mb-2 h-8"></div>
+          <div className="text-xs">ผู้จัดการ</div>
+        </div>
+      </div>
+
+      <div className="mt-4 text-[10px] text-gray-400 text-right">
+        เอกสารฉบับนี้พิมพ์ ณ วันที่ {new Date().toLocaleDateString('th-TH')}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="shadow-lg bg-white" style={{ display: 'flex' }}>
+      <SingleInvoice isCopy={false} />
+      {isDouble && (
+        <>
+          <div className="border-l border-dashed border-gray-300 mx-2"></div>
+          <SingleInvoice isCopy={true} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function Badge({ children, variant, className }: any) {
+  return <span className={`px-2 py-1 rounded-full text-xs ${className} ${variant === 'outline' ? 'border' : 'bg-primary text-white'}`}>{children}</span>
+}

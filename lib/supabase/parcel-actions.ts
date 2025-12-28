@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { Parcel, ParcelFormData, ParcelPickupData, ParcelStats, ParcelReport, ParcelAuthorization } from "@/lib/types/parcel"
 import { createUnitNotification } from "@/lib/supabase/notification-helpers"
+import { LineService } from "@/lib/line-service"
 
 // Create a new parcel
 export async function createParcel(formData: ParcelFormData, parcelImageUrl?: string) {
@@ -65,6 +66,23 @@ export async function createParcel(formData: ParcelFormData, parcelImageUrl?: st
       }
     } catch (error) {
       console.error('[Parcel] ❌ Failed to send push notification:', error)
+    }
+
+    // Send LINE notification (Unit-based)
+    try {
+      console.log('[Parcel] Starting LINE notification for unit:', formData.unit_number)
+
+      // Directly use unit_number, LineService will lookup the line_user_id from units table
+      const lineResult = await LineService.sendMessage(formData.unit_number, [
+        {
+          type: 'text',
+          text: `📦 พัสดุมาใหม่!\nถึง: ${formData.recipient_name}\nจาก: ${formData.courier_company}\nรับได้ที่: นิติบุคคล\n\nสามารถใช้ QR Code ในแอปเพื่อรับพัสดุได้เลยครับ`
+        }
+      ])
+      console.log('[Parcel] LINE notification result:', lineResult)
+
+    } catch (err) {
+      console.error('[Parcel] Failed to send LINE notification:', err)
     }
 
     return { success: true, parcel }

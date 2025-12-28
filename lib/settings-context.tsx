@@ -9,12 +9,27 @@ export type YearType = "buddhist" | "christian"
 // Add new types for currency settings
 export type Currency = "THB" | "USD" | "EUR" | "JPY" | "GBP";
 
+export interface InvoiceSettings {
+  companyName: string;
+  address: string;
+  taxId: string;
+  logoUrl: string;
+  accentColor: string;
+  copyCount: number; // 1 = Original only, 2 = Original + Copy side-by-side
+  headerText: {
+    invoice: { th: string; en: string };
+    receipt: { th: string; en: string };
+  };
+  note: string;
+}
+
 export interface Settings {
   dateFormat: DateFormat
   yearType: YearType
   commonFeeRate: number
   currency: Currency;
   showCurrencySymbol: boolean;
+  invoice: InvoiceSettings;
 }
 
 interface SettingsContextType {
@@ -28,6 +43,19 @@ const defaultSettings: Settings = {
   commonFeeRate: 40,
   currency: "THB",
   showCurrencySymbol: true,
+  invoice: {
+    companyName: "นิติบุคคลอาคารชุด พลัส 67 คอนโดมิเนียม",
+    address: "71 ซอยสุขุมวิท 67 (ศรีจันทร์) แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพมหานคร 10110",
+    taxId: "0994000148071",
+    logoUrl: "",
+    accentColor: "#000000",
+    copyCount: 2,
+    headerText: {
+      invoice: { th: "ใบแจังหนี้", en: "Invoice" },
+      receipt: { th: "ใบเสร็จรับเงิน", en: "Receipt" },
+    },
+    note: "",
+  },
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
@@ -42,7 +70,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsedSettings = JSON.parse(stored)
         // Merge with default settings to avoid missing properties on first load after update
-        setSettings(prev => ({...defaultSettings, ...parsedSettings}))
+        // Deep merge for invoice settings to ensure new fields are added to existing settings
+        const mergedSettings = {
+          ...defaultSettings,
+          ...parsedSettings,
+          invoice: {
+            ...defaultSettings.invoice,
+            ...(parsedSettings.invoice || {})
+          }
+        }
+        setSettings(mergedSettings)
       } catch (e) {
         console.error("Failed to parse settings:", e)
         // If parsing fails, stick with default settings
@@ -53,7 +90,22 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const updateSettings = (newSettings: Partial<Settings>) => {
     setSettings((prev) => {
-      const updated = { ...prev, ...newSettings }
+      // Deep merge for invoice settings if they are being updated
+      let updated: Settings;
+
+      if (newSettings.invoice) {
+        updated = {
+          ...prev,
+          ...newSettings,
+          invoice: {
+            ...prev.invoice,
+            ...newSettings.invoice
+          }
+        };
+      } else {
+        updated = { ...prev, ...newSettings } as Settings;
+      }
+
       localStorage.setItem("condo-pro-settings", JSON.stringify(updated))
       return updated
     })

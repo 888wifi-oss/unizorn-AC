@@ -103,8 +103,10 @@ export default function UnitsPage() {
     parking_space_number: "",
     default_rental_price: 0,
     sale_price: 0,
+    sale_price: 0,
     notes: "",
-    description: ""
+    description: "",
+    preferred_language: "th" as "th" | "en"
   })
 
   // Owner form data
@@ -468,7 +470,7 @@ export default function UnitsPage() {
         return
       }
 
-      const result = await createUnit(currentUser.id, {
+      const payload = {
         ...formData,
         project_id: selectedProjectId || "",
         floor: parseInt(formData.floor) || 0,
@@ -477,13 +479,21 @@ export default function UnitsPage() {
         number_of_bathrooms: parseInt(formData.number_of_bathrooms.toString()) || 1,
         parking_space_count: parseInt(formData.parking_space_count.toString()) || 0,
         default_rental_price: parseFloat(formData.default_rental_price.toString()) || 0,
-        sale_price: parseFloat(formData.sale_price.toString()) || 0
-      })
+        sale_price: parseFloat(formData.sale_price.toString()) || 0,
+        preferred_language: formData.preferred_language
+      }
+
+      let result
+      if (editingUnit) {
+        result = await updateUnit(currentUser.id, editingUnit.id, payload)
+      } else {
+        result = await createUnit(currentUser.id, payload)
+      }
 
       if (result.success) {
         toast({
-          title: "สร้างห้องชุดสำเร็จ",
-          description: `ห้องชุด ${formData.unit_number} ถูกสร้างแล้ว`,
+          title: editingUnit ? "แก้ไขห้องชุดสำเร็จ" : "สร้างห้องชุดสำเร็จ",
+          description: `ห้องชุด ${formData.unit_number} ${editingUnit ? 'ถูกแก้ไข' : 'ถูกสร้าง'}แล้ว`,
         })
         setIsDialogOpen(false)
         resetForm()
@@ -621,7 +631,8 @@ export default function UnitsPage() {
       default_rental_price: 0,
       sale_price: 0,
       notes: "",
-      description: ""
+      description: "",
+      preferred_language: "th"
     })
   }
 
@@ -1180,8 +1191,10 @@ export default function UnitsPage() {
                             parking_space_number: unit.parking_space_number || "",
                             default_rental_price: unit.default_rental_price,
                             sale_price: unit.sale_price,
+                            sale_price: unit.sale_price,
                             notes: unit.notes || "",
-                            description: unit.description || ""
+                            description: unit.description || "",
+                            preferred_language: unit.preferred_language || "th"
                           })
                           setIsDialogOpen(true)
                         }}
@@ -1745,6 +1758,20 @@ export default function UnitsPage() {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="preferred_language">ภาษาสำหรับเอกสาร</Label>
+            <Select value={formData.preferred_language} onValueChange={(value: "th" | "en") => setFormData({ ...formData, preferred_language: value })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="th">ไทย</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               ยกเลิก
@@ -2157,6 +2184,6 @@ export default function UnitsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   )
 }
